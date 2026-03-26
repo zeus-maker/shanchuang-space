@@ -149,6 +149,10 @@ src/
 - `waitForConfigComplete` - 等待配置节点完成
 - `waitForOutputReady` - 等待输出节点就绪
 
+## 📝 开发与问题记录
+
+修复 Bug 或排查问题后，请在 [`docs/dev/`](./docs/dev/) 按模板补充记录（原因、修改点、复盘），并 **`git commit`** 写明原因与修改要点。说明见 [`docs/dev/README.md`](./docs/dev/README.md)。
+
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
