@@ -275,11 +275,13 @@ export const PROVIDERS = {
   volcengine: {
     label: '火山引擎 (Volcengine)',
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    // 图片：https://www.volcengine.com/docs/82379/1541523
+    // 视频创建/查询：https://www.volcengine.com/docs/82379/1520757 、1521309（Contents Generations Tasks）
     endpoints: {
       chat: '/chat/completions',
       image: '/images/generations',
-      video: '/videos',
-      videoQuery: '/videos/{taskId}'
+      video: '/contents/generations/tasks',
+      videoQuery: '/contents/generations/tasks/{taskId}'
     },
     requestAdapter: {
       chat: (params) => {
@@ -320,10 +322,19 @@ export const PROVIDERS = {
           revisedPrompt: item.revised_prompt || ''
         }))
       },
-      video: (response) => ({
-        url: response.data?.url || response.url || response.data?.[0]?.url || response.content?.video_url || '',
-        ...response
-      })
+      video: (response) => {
+        const url =
+          response.output?.video_url ||
+          response.output?.url ||
+          (Array.isArray(response.output) && response.output[0]?.url) ||
+          response.data?.url ||
+          response.url ||
+          response.data?.[0]?.url ||
+          response.content?.video_url ||
+          response.video_url ||
+          ''
+        return { url, ...response }
+      }
     }
   },
   diy: {

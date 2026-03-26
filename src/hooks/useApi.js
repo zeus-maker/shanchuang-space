@@ -12,7 +12,12 @@ import {
 } from '@/api'
 import { getModelByName, usesVolcengineImageApi, usesVolcengineVideoApi } from '@/config/models'
 import { getProviderConfig, getDefaultBaseUrl } from '@/config/providers'
-import { getVolcengineApiKey, getVolcengineBaseUrl } from '@/config/volcengineEnv'
+import {
+  getVolcengineApiKey,
+  getVolcengineBaseUrl,
+  getVolcengineImagePath,
+  normalizeVolcengineInferenceBase
+} from '@/config/volcengineEnv'
 import {
   setVideoPollContext,
   getVideoPollContext,
@@ -21,6 +26,15 @@ import {
 import { useApiConfig } from './useApiConfig'
 import { useProvider } from './useProvider'
 import { useModelStore } from '@/stores/pinia'
+
+/** 火山推理 Base：环境变量已 normalize；UI 里填写的 Base 也做纠错 */
+function resolveVolcengineInferenceBase(modelStore) {
+  const s = modelStore.baseUrlsByProvider?.volcengine
+  if (s != null && String(s).trim()) {
+    return normalizeVolcengineInferenceBase(String(s).trim())
+  }
+  return getVolcengineBaseUrl()
+}
 
 /**
  * Base API state hook | 基础 API 状态 Hook
@@ -200,9 +214,12 @@ export const useImageGeneration = () => {
       const providerCfg = getProviderConfig(imageProvider)
       const baseUrl =
         imageProvider === 'volcengine'
-          ? modelStore.baseUrlsByProvider?.volcengine || getVolcengineBaseUrl()
+          ? resolveVolcengineInferenceBase(modelStore)
           : modelStore.baseUrlsByProvider?.[imageProvider] || getDefaultBaseUrl(imageProvider)
-      const imagePath = providerCfg.endpoints?.image || '/images/generations'
+      const imagePath =
+        imageProvider === 'volcengine'
+          ? getVolcengineImagePath()
+          : providerCfg.endpoints?.image || '/images/generations'
       const endpoint = `${String(baseUrl).replace(/\/$/, '')}${imagePath.startsWith('/') ? imagePath : `/${imagePath}`}`
 
       const apiKeyForImage =
@@ -285,7 +302,7 @@ export const useVideoGeneration = () => {
 
     const baseUrl =
       videoProvider === 'volcengine'
-        ? modelStore.baseUrlsByProvider?.volcengine || getVolcengineBaseUrl()
+        ? resolveVolcengineInferenceBase(modelStore)
         : modelStore.baseUrlsByProvider?.[videoProvider] || getDefaultBaseUrl(videoProvider)
 
     const videoPath = providerCfg.endpoints?.video || '/videos'
@@ -323,10 +340,14 @@ export const useVideoGeneration = () => {
 
     const isAsync = modelConfig?.async !== false
 
-    if (!isAsync || task.data?.url || task.url || task.content?.video_url) {
+    if (!isAsync || task.data?.url || task.url || task.content?.video_url || task.output?.video_url) {
       const volcResp = providerCfg.responseAdapter?.video?.(task)
       const url =
-        volcResp?.url || task.data?.url || task.url || task.content?.video_url
+        volcResp?.url ||
+        task.output?.video_url ||
+        task.data?.url ||
+        task.url ||
+        task.content?.video_url
       return { taskId: null, url }
     }
 
@@ -384,19 +405,30 @@ export const useVideoGeneration = () => {
           ? volcCfg.responseAdapter?.video?.(result) || adaptResponse('video', result)
           : adaptResponse('video', result)
 
-        if (result.status === 'completed' || result.status === 'succeeded' || result.data) {
-          const videoUrl =
-            adaptedResult.url ||
-            result.data?.url ||
-            result.data?.[0]?.url ||
-            result.url ||
-            result.content?.video_url ||
-            result.video_url
+        const videoUrl =
+          adaptedResult.url ||
+          result.output?.video_url ||
+          result.output?.url ||
+          (Array.isArray(result.output) && result.output[0]?.url) ||
+          result.data?.url ||
+          result.data?.[0]?.url ||
+          result.url ||
+          result.content?.video_url ||
+          result.video_url
+
+        if (videoUrl) {
           return { ...adaptedResult, url: videoUrl }
         }
 
-        if (result.status === 'failed' || result.status === 'error') {
-          throw new Error(result.error?.message || result.message || '视频生成失败')
+        const st = result.status
+        if (st === 'failed' || st === 'error' || st === 'cancelled') {
+          throw new Error(
+            result.error?.message || result.message || result.error?.code || '视频生成失败'
+          )
+        }
+
+        if (st === 'completed' || st === 'succeeded' || st === 'success') {
+          throw new Error('任务已完成但未返回视频地址，请查看控制台任务详情')
         }
 
         await new Promise(resolve => setTimeout(resolve, interval))
