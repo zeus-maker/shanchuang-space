@@ -61,4 +61,5 @@ YYYY-MM-DD-<简短描述 slug>.md
 
 ## 与 Cursor 规则
 
-仓库根目录 `.cursor/rules/dev-issue-log.mdc` 要求：修复后补充本目录记录，并执行带详细说明的 `git commit`（用户明确要求不提交时除外）。
+- **留档与提交：** `.cursor/rules/dev-issue-log.mdc` — 修复后补充本目录记录，并执行带详细说明的 `git commit`（用户明确要求不提交时除外）。  
+- **向用户回复的格式与质量：** `.cursor/rules/user-response-format.mdc` — 原因说明、已做调整、操作指引等。
