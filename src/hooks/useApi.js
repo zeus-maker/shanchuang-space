@@ -10,7 +10,14 @@ import {
   getVideoTaskStatus,
   streamChatCompletions
 } from '@/api'
-import { getModelByName } from '@/config/models'
+import { getModelByName, usesVolcengineImageApi, usesVolcengineVideoApi } from '@/config/models'
+import { getProviderConfig, getDefaultBaseUrl } from '@/config/providers'
+import { getVolcengineApiKey, getVolcengineBaseUrl } from '@/config/volcengineEnv'
+import {
+  setVideoPollContext,
+  getVideoPollContext,
+  deleteVideoPollContext
+} from '@/config/videoPollContext'
 import { useApiConfig } from './useApiConfig'
 import { useProvider } from './useProvider'
 import { useModelStore } from '@/stores/pinia'
@@ -89,26 +96,27 @@ export const useChat = (options = {}) => {
         { role: 'user', content: userContent }
       ]
 
-      // 适配请求参数
-      const adaptedParams = adaptRequest('chat', {
-        model: options.model || 'gpt-4o-mini',
-        messages: msgList
-      })
+        // 适配请求参数
+        const adaptedParams = adaptRequest('chat', {
+          model: modelStore.selectedChatModel || options.model || 'gpt-4o-mini',
+          messages: msgList
+        })
 
-      if (stream) {
-        status.value = 'streaming'
-        abortController = new AbortController()
-        let fullResponse = ''
+        if (stream) {
+          status.value = 'streaming'
+          abortController = new AbortController()
+          let fullResponse = ''
 
-        // 使用 modelStore 获取完整 URL
-        const chatUrl = modelStore.getChatEndpoint()
-        const endpoint = new URL(chatUrl).pathname
+          // 使用 modelStore 获取完整 URL
+          const chatUrl = modelStore.getChatEndpoint()
+          const url = new URL(chatUrl)
+          const endpoint = url.pathname
 
-        for await (const chunk of streamChatCompletions(
-          adaptedParams,
-          abortController.signal,
-          { baseUrl: new URL(chatUrl).origin, endpoint }
-        )) {
+          for await (const chunk of streamChatCompletions(
+            adaptedParams,
+            abortController.signal,
+            { baseUrl: url.origin, endpoint }
+          )) {
           fullResponse += chunk
           currentResponse.value = fullResponse
         }
@@ -176,22 +184,52 @@ export const useImageGeneration = () => {
         // n: params.n || 1
       }
 
+      if (params.quality != null && params.quality !== '') {
+        requestData.quality = params.quality
+      }
+      if (params.n != null) {
+        requestData.n = params.n
+      }
+
       // Add reference image if provided | 添加参考图
       if (params.image) {
         requestData.image = params.image
       }
 
-      // 适配请求参数
-      const adaptedParams = adaptRequest('image', requestData)
+      const imageProvider = usesVolcengineImageApi(params.model) ? 'volcengine' : modelStore.currentProvider
+      const providerCfg = getProviderConfig(imageProvider)
+      const baseUrl =
+        imageProvider === 'volcengine'
+          ? modelStore.baseUrlsByProvider?.volcengine || getVolcengineBaseUrl()
+          : modelStore.baseUrlsByProvider?.[imageProvider] || getDefaultBaseUrl(imageProvider)
+      const imagePath = providerCfg.endpoints?.image || '/images/generations'
+      const endpoint = `${String(baseUrl).replace(/\/$/, '')}${imagePath.startsWith('/') ? imagePath : `/${imagePath}`}`
 
-      // Call API | 调用 API
+      const apiKeyForImage =
+        imageProvider === 'volcengine'
+          ? getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine || ''
+          : modelStore.apiKeysByProvider?.[imageProvider] || ''
+      if (!apiKeyForImage) {
+        const hint =
+          imageProvider === 'volcengine'
+            ? '豆包 Seedream 需火山引擎 Key：请在项目根目录 .env 设置 VITE_VOLCENGINE_API_KEY，或在 API 设置中填写「火山引擎」密钥'
+            : '请先配置 API Key'
+        const err = new Error(hint)
+        setError(err)
+        throw err
+      }
+
+      const adaptReq = providerCfg.requestAdapter?.image
+      const adaptedParams = adaptReq ? adaptReq(requestData) : requestData
+
       const response = await generateImage(adaptedParams, {
         requestType: 'json',
-        endpoint: modelStore.getImageEndpoint()
+        endpoint,
+        headers: { Authorization: `Bearer ${apiKeyForImage}` }
       })
 
-      // 适配响应数据
-      const adaptedData = adaptResponse('image', response)
+      const adaptResp = providerCfg.responseAdapter?.image
+      const adaptedData = adaptResp ? adaptResp(response) : adaptResponse('image', response)
 
       images.value = adaptedData
       currentImage.value = adaptedData[0] || null
@@ -230,41 +268,81 @@ export const useVideoGeneration = () => {
   const createVideoTaskOnly = async (params) => {
     const modelConfig = getModelByName(params.model)
 
-    // Build request data | 构建请求数据
     const requestData = {
       model: params.model,
       prompt: params.prompt || ''
     }
-    // Add optional params | 添加可选参数
     if (params.first_frame_image) requestData.first_frame_image = params.first_frame_image
     if (params.last_frame_image) requestData.last_frame_image = params.last_frame_image
     if (params.ratio) requestData.size = params.ratio
     if (params.dur) requestData.seconds = params.dur
+    if (params.resolution) requestData.resolution = params.resolution
+    else if (modelConfig?.defaultResolution) requestData.resolution = modelConfig.defaultResolution
 
-    // 适配请求参数
-    const adaptedParams = adaptRequest('video', requestData)
+    const videoProvider = usesVolcengineVideoApi(params.model) ? 'volcengine' : modelStore.currentProvider
+    const providerCfg = getProviderConfig(videoProvider)
+    const chatfireCfg = getProviderConfig('chatfire')
 
-    // Call API to create task | 调用 API 创建任务
-    const task = await createVideoTask(adaptedParams, {
-      requestType: 'json',
-      endpoint: modelStore.getVideoEndpoint()
-    })
+    const baseUrl =
+      videoProvider === 'volcengine'
+        ? modelStore.baseUrlsByProvider?.volcengine || getVolcengineBaseUrl()
+        : modelStore.baseUrlsByProvider?.[videoProvider] || getDefaultBaseUrl(videoProvider)
 
-    // Check if async (need polling) | 检查是否异步
-    const isAsync = modelConfig?.async !== false
+    const videoPath = providerCfg.endpoints?.video || '/videos'
+    const createEndpoint = `${String(baseUrl).replace(/\/$/, '')}${videoPath.startsWith('/') ? videoPath : `/${videoPath}`}`
 
-    // If has video URL directly, return | 如果直接有视频 URL，返回
-    if (!isAsync || task.data?.url || task.url || task.content?.video_url) {
-      return {
-        taskId: null,
-        url: task.data?.url || task.url || task.content?.video_url
-      }
+    const apiKey =
+      videoProvider === 'volcengine'
+        ? getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine || ''
+        : modelStore.apiKeysByProvider?.[videoProvider] || ''
+
+    if (!apiKey) {
+      throw new Error(
+        videoProvider === 'volcengine'
+          ? 'Seedance 1.5 Pro 需火山引擎 Key：请在根目录 .env 设置 VITE_VOLCENGINE_API_KEY，或在 API 设置中填写「火山引擎」密钥'
+          : '请先配置 API Key'
+      )
     }
 
-    // Get task ID | 获取任务 ID
+    const modelStr = String(params.model || '')
+    const useChatfireSeedanceBody =
+      modelStr.includes('seedance') &&
+      (usesVolcengineVideoApi(params.model) || videoProvider === 'chatfire')
+
+    const adaptedParams = useChatfireSeedanceBody
+      ? chatfireCfg.requestAdapter.video(requestData)
+      : providerCfg.requestAdapter?.video
+        ? providerCfg.requestAdapter.video(requestData)
+        : adaptRequest('video', requestData)
+
+    const task = await createVideoTask(adaptedParams, {
+      requestType: 'json',
+      endpoint: createEndpoint,
+      headers: { Authorization: `Bearer ${apiKey}` }
+    })
+
+    const isAsync = modelConfig?.async !== false
+
+    if (!isAsync || task.data?.url || task.url || task.content?.video_url) {
+      const volcResp = providerCfg.responseAdapter?.video?.(task)
+      const url =
+        volcResp?.url || task.data?.url || task.url || task.content?.video_url
+      return { taskId: null, url }
+    }
+
     const newTaskId = task.id || task.task_id || task.taskId
     if (!newTaskId) {
       throw new Error('未获取到任务 ID')
+    }
+
+    if (videoProvider === 'volcengine') {
+      const queryTpl = providerCfg.endpoints?.videoQuery || '/videos/{taskId}'
+      const taskPath = queryTpl.startsWith('/') ? queryTpl : `/${queryTpl}`
+      const endpointTemplate = `${String(baseUrl).replace(/\/$/, '')}${taskPath}`
+      setVideoPollContext(newTaskId, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        endpointTemplate
+      })
     }
 
     return { taskId: newTaskId }
@@ -276,39 +354,58 @@ export const useVideoGeneration = () => {
   const pollVideoTask = async (pollTaskId, onProgress = () => {}) => {
     const maxAttempts = 120
     const interval = 5000
+    const ctx = getVideoPollContext(pollTaskId)
+    const volcCfg = getProviderConfig('volcengine')
 
-    for (let i = 0; i < maxAttempts; i++) {
-      onProgress(i + 1, Math.min(Math.round((i / maxAttempts) * 100), 99))
+    try {
+      for (let i = 0; i < maxAttempts; i++) {
+        onProgress(i + 1, Math.min(Math.round((i / maxAttempts) * 100), 99))
 
-      // 获取任务查询端点，支持 {taskId} 占位符替换
-      let taskEndpoint = modelStore.getVideoTaskEndpoint()
-      if (taskEndpoint.includes('{taskId}')) {
-        taskEndpoint = taskEndpoint.replace('{taskId}', pollTaskId)
+        let taskEndpoint
+        let pollHeaders = {}
+        if (ctx?.endpointTemplate) {
+          taskEndpoint = ctx.endpointTemplate.includes('{taskId}')
+            ? ctx.endpointTemplate.replace('{taskId}', pollTaskId)
+            : ctx.endpointTemplate
+          pollHeaders = ctx.headers || {}
+        } else {
+          taskEndpoint = modelStore.getVideoTaskEndpoint()
+          if (taskEndpoint.includes('{taskId}')) {
+            taskEndpoint = taskEndpoint.replace('{taskId}', pollTaskId)
+          }
+        }
+
+        const result = await getVideoTaskStatus(pollTaskId, {
+          endpoint: taskEndpoint,
+          headers: pollHeaders
+        })
+
+        const adaptedResult = ctx
+          ? volcCfg.responseAdapter?.video?.(result) || adaptResponse('video', result)
+          : adaptResponse('video', result)
+
+        if (result.status === 'completed' || result.status === 'succeeded' || result.data) {
+          const videoUrl =
+            adaptedResult.url ||
+            result.data?.url ||
+            result.data?.[0]?.url ||
+            result.url ||
+            result.content?.video_url ||
+            result.video_url
+          return { ...adaptedResult, url: videoUrl }
+        }
+
+        if (result.status === 'failed' || result.status === 'error') {
+          throw new Error(result.error?.message || result.message || '视频生成失败')
+        }
+
+        await new Promise(resolve => setTimeout(resolve, interval))
       }
 
-      const result = await getVideoTaskStatus(pollTaskId, {
-        endpoint: taskEndpoint
-      })
-
-      // 适配轮询响应
-      const adaptedResult = adaptResponse('video', result)
-
-      // Check for completion | 检查是否完成
-      if (result.status === 'completed' || result.status === 'succeeded' || result.data) {
-        const videoUrl = adaptedResult.url || result.data?.url || result.data?.[0]?.url || result.url || result.content?.video_url || result.video_url
-        return { ...adaptedResult, url: videoUrl,  }
-      }
-
-      // Check for failure | 检查是否失败
-      if (result.status === 'failed' || result.status === 'error') {
-        throw new Error(result.error?.message || result.message || '视频生成失败')
-      }
-
-      // Wait before next poll | 等待下次轮询
-      await new Promise(resolve => setTimeout(resolve, interval))
+      throw new Error('视频生成超时')
+    } finally {
+      deleteVideoPollContext(pollTaskId)
     }
-
-    throw new Error('视频生成超时')
   }
 
   /**

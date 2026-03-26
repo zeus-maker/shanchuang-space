@@ -152,6 +152,8 @@ import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, edges }
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { getModelRatioOptions, getModelDurationOptions, getModelConfig, DEFAULT_VIDEO_MODEL } from '../../stores/models'
+import { usesVolcengineVideoApi } from '../../config/models'
+import { getVolcengineApiKey } from '../../config/volcengineEnv'
 
 // 使用 Pinia store 获取模型选项（根据渠道过滤）
 const modelStore = useModelStore()
@@ -164,8 +166,13 @@ const props = defineProps({
 // Vue Flow instance | Vue Flow 实例
 const { updateNodeInternals } = useVueFlow()
 
-// API config state | API 配置状态
-const isConfigured = computed(() => !!modelStore.currentApiKey)
+// API config state | API 配置状态（Seedance 1.5 Pro 走火山引擎，与 .env 或 API 设置中的火山 Key）
+const isConfigured = computed(() => {
+  if (usesVolcengineVideoApi(localModel.value)) {
+    return !!(getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine)
+  }
+  return !!modelStore.currentApiKey
+})
 
 // Video generation hook | 视频生成 hook
 const { loading, error, status, video: generatedVideo, progress, createVideoTaskOnly } = useVideoGeneration()

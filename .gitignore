@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Env（含 VITE_VOLCENGINE_API_KEY，勿提交）
+.env
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

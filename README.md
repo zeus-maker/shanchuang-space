@@ -81,6 +81,8 @@ npm run build
 
 支持 OpenAI 兼容的 API 接口。
 
+**豆包 Seedream / Seedance 1.5 Pro（火山 Ark）：** 可将密钥写在项目根目录 `.env` 的 `VITE_VOLCENGINE_API_KEY`（参考 `.env.example`）。修改后需重启开发服务；该文件已加入 `.gitignore`，勿提交仓库。
+
 ## 🛠️ 技术栈
 
 - **框架**: [Vue 3](https://vuejs.org/) + [Vite](https://vitejs.dev/)

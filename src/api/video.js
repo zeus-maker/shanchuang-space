@@ -6,23 +6,27 @@ import { request } from '@/utils'
 
 // 创建视频任务
 export const createVideoTask = (data, options = {}) => {
-  const { endpoint = '/videos', requestType = 'json' } = options
+  const { endpoint = '/videos', requestType = 'json', headers: extraHeaders = {} } = options
   return request({
     url: endpoint,
     method: 'post',
     data,
-    headers: requestType === 'formdata'
-      ? { 'Content-Type': 'multipart/form-data' }
-      : { 'Content-Type': 'application/json' }
+    headers: {
+      ...(requestType === 'formdata'
+        ? { 'Content-Type': 'multipart/form-data' }
+        : { 'Content-Type': 'application/json' }),
+      ...extraHeaders
+    }
   })
 }
 
 // 查询视频任务状态
 export const getVideoTaskStatus = (taskId, options = {}) => {
-  const { endpoint = '/videos' } = options
+  const { endpoint = '/videos', headers: extraHeaders = {} } = options
   return request({
-    url: `${endpoint}`,
-    method: 'get'
+    url: endpoint,
+    method: 'get',
+    headers: { ...extraHeaders }
   })
 }
 // 轮询视频任务直到完成

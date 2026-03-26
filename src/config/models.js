@@ -221,9 +221,12 @@ export const CHAT_MODELS = [
     { label: 'GPT-4o Mini', key: 'gpt-4o-mini', provider: ['openai'] },
     { label: 'GPT-4o', key: 'gpt-4o', provider: ['openai'] },
     { label: 'GPT-5.2', key: 'gpt-5.2', provider: ['openai'] },
-    { label: 'DeepSeek Chat', key: 'deepseek-chat', provider: ['openai', 'chatfire'] },
+    { label: 'DeepSeek Chat', key: 'deepseek-chat', provider: ['openai', 'chatfire', 'deepseek'] },
+    { label: 'DeepSeek Reasoner', key: 'deepseek-reasoner', provider: ['deepseek'] },
     { label: '豆包 Seed Flash', key: 'doubao-seed-1-6-flash-250615', provider: ['chatfire'] },
-    { label: 'Gemini 3 Pro', key: 'gemini-3-pro', provider: ['openai'] }
+    { label: 'Gemini 3 Pro', key: 'gemini-3-pro', provider: ['openai'] },
+    { label: 'Doubao Pro 32k', key: 'ep-20250212200155-2nx8j', provider: ['volcengine'] },
+    { label: 'Doubao Lite 32k', key: 'ep-20250212200332-9c4kt', provider: ['volcengine'] }
 ]
 
 // Image size options | 图片尺寸选项
@@ -257,7 +260,7 @@ export const VIDEO_DURATION_OPTIONS = [
 // Default values | 默认值
 export const DEFAULT_IMAGE_MODEL = 'nano-banana-pro'
 export const DEFAULT_VIDEO_MODEL = 'doubao-seedance-1-5-pro-251215'
-export const DEFAULT_CHAT_MODEL = 'gpt-4o-mini'
+export const DEFAULT_CHAT_MODEL = 'deepseek-chat'
 export const DEFAULT_IMAGE_SIZE = '2048x2048'
 export const DEFAULT_VIDEO_RATIO = '16:9'
 export const DEFAULT_VIDEO_DURATION = 5
@@ -267,3 +270,15 @@ export const getModelByName = (key) => {
     const allModels = [...IMAGE_MODELS, ...VIDEO_MODELS, ...CHAT_MODELS]
     return allModels.find(m => m.key === key)
 }
+
+/**
+ * 豆包 Seedream 系列需直连火山引擎 Ark 生图接口（与全局聊天渠道无关）
+ */
+export const usesVolcengineImageApi = (modelKey) =>
+    typeof modelKey === 'string' && modelKey.toLowerCase().includes('doubao-seedream')
+
+/**
+ * Seedance 1.5 Pro 需直连火山引擎 Ark 视频接口
+ */
+export const usesVolcengineVideoApi = (modelKey) =>
+    typeof modelKey === 'string' && modelKey.includes('doubao-seedance-1-5-pro')

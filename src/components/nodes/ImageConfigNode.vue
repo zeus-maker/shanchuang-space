@@ -167,6 +167,8 @@ import { updateNode, addNode, addEdge, nodes, edges, duplicateNode, removeNode }
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { getModelSizeOptions, getModelQualityOptions, getModelConfig, DEFAULT_IMAGE_MODEL } from '../../stores/models'
+import { usesVolcengineImageApi } from '../../config/models'
+import { getVolcengineApiKey } from '../../config/volcengineEnv'
 import { parseMentions } from '../../hooks/useNodeRef'
 
 // 使用 Pinia store 获取模型选项（根据渠道过滤）
@@ -180,8 +182,13 @@ const props = defineProps({
 // Vue Flow instance | Vue Flow 实例
 const { updateNodeInternals } = useVueFlow()
 
-// API config state | API 配置状态
-const isConfigured = computed(() => !!modelStore.currentApiKey)
+// API config state | API 配置状态（Seedream 走火山引擎 Key，与其它渠道独立）
+const isConfigured = computed(() => {
+  if (usesVolcengineImageApi(localModel.value)) {
+    return !!(getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine)
+  }
+  return !!modelStore.currentApiKey
+})
 
 // Image generation hook | 图片生成 hook
 const { loading, error, images: generatedImages, generate } = useImageGeneration()

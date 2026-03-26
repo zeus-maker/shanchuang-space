@@ -238,11 +238,131 @@ export const PROVIDERS = {
       }
     }
   },
-
-  
+  deepseek: {
+    label: 'DeepSeek',
+    defaultBaseUrl: 'https://api.deepseek.com',
+    endpoints: {
+      chat: '/chat/completions',
+      image: '/images/generations',
+      video: '/videos',
+      videoQuery: '/videos/{taskId}'
+    },
+    requestAdapter: {
+      chat: (params) => {
+        const adapted = {
+          model: params.model,
+          messages: params.messages
+        }
+        if (params.temperature !== undefined) adapted.temperature = params.temperature
+        if (params.max_tokens !== undefined) adapted.max_tokens = params.max_tokens
+        if (params.stream !== undefined) adapted.stream = params.stream
+        return adapted
+      },
+      image: (params) => params,
+      video: (params) => params
+    },
+    responseAdapter: {
+      chat: (response) => {
+        if (response.choices && response.choices.length > 0) {
+          return response.choices[0].message?.content || ''
+        }
+        return ''
+      },
+      image: (response) => response,
+      video: (response) => response
+    }
+  },
+  volcengine: {
+    label: '火山引擎 (Volcengine)',
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    endpoints: {
+      chat: '/chat/completions',
+      image: '/images/generations',
+      video: '/videos',
+      videoQuery: '/videos/{taskId}'
+    },
+    requestAdapter: {
+      chat: (params) => {
+        const adapted = {
+          model: params.model,
+          messages: params.messages
+        }
+        if (params.temperature !== undefined) adapted.temperature = params.temperature
+        if (params.max_tokens !== undefined) adapted.max_tokens = params.max_tokens
+        if (params.stream !== undefined) adapted.stream = params.stream
+        return adapted
+      },
+      image: (params) => {
+        const adapted = {
+          model: params.model,
+          prompt: params.prompt
+        }
+        if (params.size) adapted.size = params.size
+        if (params.n) adapted.n = params.n
+        if (params.quality) adapted.quality = params.quality
+        if (params.style) adapted.style = params.style
+        if (params.image) adapted.image = params.image
+        return adapted
+      },
+      video: (params) => params
+    },
+    responseAdapter: {
+      chat: (response) => {
+        if (response.choices && response.choices.length > 0) {
+          return response.choices[0].message?.content || ''
+        }
+        return ''
+      },
+      image: (response) => {
+        const data = response.data || response
+        return (Array.isArray(data) ? data : [data]).map(item => ({
+          url: item.url || item.b64_json || '',
+          revisedPrompt: item.revised_prompt || ''
+        }))
+      },
+      video: (response) => ({
+        url: response.data?.url || response.url || response.data?.[0]?.url || response.content?.video_url || '',
+        ...response
+      })
+    }
+  },
+  diy: {
+    label: 'DIY (自定义)',
+    defaultBaseUrl: 'https://api.example.com/v1',
+    endpoints: {
+      chat: '/chat/completions',
+      image: '/images/generations',
+      video: '/videos',
+      videoQuery: '/videos/{taskId}'
+    },
+    requestAdapter: {
+      chat: (params) => {
+        const adapted = {
+          model: params.model,
+          messages: params.messages
+        }
+        if (params.temperature !== undefined) adapted.temperature = params.temperature
+        if (params.max_tokens !== undefined) adapted.max_tokens = params.max_tokens
+        if (params.stream !== undefined) adapted.stream = params.stream
+        return adapted
+      },
+      image: (params) => params,
+      video: (params) => params
+    },
+    responseAdapter: {
+      chat: (response) => {
+        if (response.choices && response.choices.length > 0) {
+          return response.choices[0].message?.content || ''
+        }
+        return ''
+      },
+      image: (response) => response,
+      video: (response) => response
+    }
+  },
 
   // 默认使用 OpenAI 格式
-  default: 'chatfire'
+  default: 'deepseek'
 }
 
 // 获取渠道列表
@@ -257,7 +377,7 @@ export const getProviderList = () => {
 
 // 获取默认渠道
 export const getDefaultProvider = () => {
-  return PROVIDERS.default || 'chatfire'
+  return PROVIDERS.default || 'deepseek'
 }
 
 // 获取渠道的默认 Base URL
