@@ -49,13 +49,18 @@
         :edge-types="edgeTypes"
         :default-viewport="canvasViewport"
         :min-zoom="0.1"
-        :max-zoom="2"
+        :max-zoom="4"
         :snap-to-grid="true"
         :snap-grid="[20, 20]"
+        :pan-on-scroll="false"
+        :zoom-on-scroll="true"
+        :zoom-on-pinch="true"
+        :pan-on-drag="true"
+        :zoom-on-double-click="false"
         @connect="onConnect"
         @node-click="onNodeClick"
         @pane-click="onPaneClick"
-        @viewport-change="handleViewportChange"
+        @viewport-change-end="handleViewportChange"
         @edges-change="onEdgesChange"
         class="canvas-flow"
       >
@@ -612,7 +617,7 @@ const onNodeClick = (event) => {
   // }
 }
 
-// Handle viewport change | 处理视口变化
+// 仅在平移/缩放结束后写入 store，避免拖拽过程中每帧触发响应式与防抖保存导致卡顿
 const handleViewportChange = (newViewport) => {
   updateViewport(newViewport)
 }
@@ -870,5 +875,9 @@ onUnmounted(() => {
 .canvas-flow {
   width: 100%;
   height: 100%;
+}
+
+.canvas-flow :deep(.vue-flow__viewport) {
+  touch-action: none;
 }
 </style>
