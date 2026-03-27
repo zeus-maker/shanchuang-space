@@ -55,11 +55,14 @@
         :pan-on-scroll="false"
         :zoom-on-scroll="true"
         :zoom-on-pinch="true"
-        :pan-on-drag="true"
+        :pan-on-drag="false"
+        :selection-key-code="true"
         :zoom-on-double-click="false"
         @connect="onConnect"
         @node-click="onNodeClick"
         @pane-click="onPaneClick"
+        @pane-mouse-move="onPaneMouseMove"
+        @pane-mouse-leave="onPaneMouseLeave"
         @viewport-change-end="handleViewportChange"
         @edges-change="onEdgesChange"
         class="canvas-flow"
@@ -72,6 +75,18 @@
           :zoomable="true"
         />
       </VueFlow>
+
+      <!-- 多选批量操作 | Multi-selection toolbar -->
+      <div
+        v-if="multiSelectedNodes.length >= 2"
+        class="absolute top-14 left-1/2 -translate-x-1/2 z-30 flex flex-wrap items-center justify-center gap-1 px-2 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg max-w-[95vw]"
+      >
+        <span class="text-xs text-[var(--text-secondary)] px-1">已选 {{ multiSelectedNodes.length }} 个</span>
+        <n-button size="small" quaternary @click="saveSelectionToMaterials">保存到素材</n-button>
+        <n-button size="small" quaternary @click="batchDownloadSelection">批量下载</n-button>
+        <n-button size="small" quaternary @click="duplicateSelection">创建副本</n-button>
+        <n-button size="small" type="primary" @click="createBundleRefNode">打组</n-button>
+      </div>
 
       <!-- Left toolbar | 左侧工具栏 -->
       <aside class="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-2 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] shadow-lg z-10">
@@ -144,6 +159,9 @@
             <n-icon :size="14"><AddOutline /></n-icon>
           </button>
         </div>
+        <span class="text-[10px] text-[var(--text-tertiary)] px-1 max-w-[140px] leading-tight hidden sm:inline" title="平移画布方式">
+          空格+拖移平移；贴边悬停自动滑动；左键拖框多选
+        </span>
       </div>
 
       <!-- Bottom input panel (floating) | 底部输入面板（悬浮） -->
@@ -279,11 +297,11 @@ import {
   AppsOutline,
   ChatbubbleOutline
 } from '@vicons/ionicons5'
-import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation } from '../stores/canvas'
+import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes } from '../stores/canvas'
 import { loadAllModels } from '../stores/models'
 import { useChat, useWorkflowOrchestrator } from '../hooks'
 import { useModelStore } from '../stores/pinia'
-import { projects, initProjectsStore, updateProject, renameProject, currentProject } from '../stores/projects'
+import { projects, initProjectsStore, updateProject, renameProject, currentProject, updateProjectCanvas } from '../stores/projects'
 
 // API Settings component | API 设置组件
 import ApiSettings from '../components/ApiSettings.vue'
@@ -357,7 +375,7 @@ const router = useRouter()
 const route = useRoute()
 
 // Vue Flow instance | Vue Flow 实例
-const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals } = useVueFlow()
+const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals, setViewport } = useVueFlow()
 
 // Register custom node types | 注册自定义节点类型
 const nodeTypes = {
@@ -401,6 +419,132 @@ const hasDownloadableAssets = computed(() => {
     (n.type === 'image' || n.type === 'video') && n.data?.url
   )
 })
+
+/** 当前多选节点（至少 2 个时显示批量工具栏）| Selected nodes for batch actions */
+const multiSelectedNodes = computed(() => nodes.value.filter(n => n.selected))
+
+const EDGE_AUTOPAN_MARGIN = 56
+const EDGE_AUTOPAN_SPEED = 7
+const edgeAutopanVel = { x: 0, y: 0 }
+let edgeAutopanRaf = null
+
+const stopEdgeAutopan = () => {
+  edgeAutopanVel.x = 0
+  edgeAutopanVel.y = 0
+  if (edgeAutopanRaf != null) {
+    cancelAnimationFrame(edgeAutopanRaf)
+    edgeAutopanRaf = null
+  }
+}
+
+const tickEdgeAutopan = () => {
+  edgeAutopanRaf = null
+  if (edgeAutopanVel.x === 0 && edgeAutopanVel.y === 0) return
+  const { x, y, zoom } = viewport.value
+  setViewport({ x: x + edgeAutopanVel.x, y: y + edgeAutopanVel.y, zoom })
+  edgeAutopanRaf = requestAnimationFrame(tickEdgeAutopan)
+}
+
+/**
+ * 画布边缘悬停时自动平移视口（无按键、非输入框聚焦时）| Edge auto-pan on hover
+ */
+const onPaneMouseMove = (e) => {
+  if (e.buttons !== 0) {
+    stopEdgeAutopan()
+    return
+  }
+  const ae = document.activeElement
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) {
+    stopEdgeAutopan()
+    return
+  }
+  const el = e.currentTarget || e.target
+  if (!el?.getBoundingClientRect) return
+  const rect = el.getBoundingClientRect()
+  let vx = 0
+  let vy = 0
+  if (e.clientX - rect.left < EDGE_AUTOPAN_MARGIN) vx = EDGE_AUTOPAN_SPEED
+  else if (rect.right - e.clientX < EDGE_AUTOPAN_MARGIN) vx = -EDGE_AUTOPAN_SPEED
+  if (e.clientY - rect.top < EDGE_AUTOPAN_MARGIN) vy = EDGE_AUTOPAN_SPEED
+  else if (rect.bottom - e.clientY < EDGE_AUTOPAN_MARGIN) vy = -EDGE_AUTOPAN_SPEED
+  edgeAutopanVel.x = vx
+  edgeAutopanVel.y = vy
+  if ((vx !== 0 || vy !== 0) && edgeAutopanRaf == null) {
+    edgeAutopanRaf = requestAnimationFrame(tickEdgeAutopan)
+  }
+  if (vx === 0 && vy === 0) stopEdgeAutopan()
+}
+
+const onPaneMouseLeave = () => {
+  stopEdgeAutopan()
+}
+
+const saveSelectionToMaterials = () => {
+  const projectId = route.params.id
+  if (!projectId || projectId === 'new') {
+    window.$message?.warning('请使用已保存的项目')
+    return
+  }
+  const proj = projects.value.find(p => p.id === projectId)
+  const prev = proj?.canvasData?.savedMaterials || []
+  const sel = multiSelectedNodes.value
+  const entries = sel.map((n, i) => ({
+    id: `mat_${Date.now()}_${i}_${n.id}`,
+    nodeId: n.id,
+    type: n.type,
+    label: n.data?.label,
+    url: n.data?.url,
+    thumbnail: n.data?.thumbnail,
+    savedAt: Date.now()
+  }))
+  updateProjectCanvas(projectId, { savedMaterials: [...prev, ...entries] })
+  window.$message?.success(`已将 ${entries.length} 条记入项目素材（canvasData.savedMaterials）`)
+}
+
+const batchDownloadSelection = () => {
+  const withUrl = multiSelectedNodes.value.filter(n =>
+    (n.type === 'image' || n.type === 'video') && n.data?.url
+  )
+  if (withUrl.length === 0) {
+    window.$message?.info('选中节点中没有带链接的图片/视频')
+    return
+  }
+  withUrl.forEach(n => window.open(n.data.url, '_blank'))
+  window.$message?.success(`已打开 ${withUrl.length} 个链接`)
+}
+
+const duplicateSelection = () => {
+  const ids = multiSelectedNodes.value.map(n => n.id)
+  const newIds = duplicateNodes(ids)
+  nextTick(() => {
+    newIds.forEach(id => updateNodeInternals(id))
+  })
+  window.$message?.success(`已创建 ${newIds.length} 个副本`)
+}
+
+const createBundleRefNode = () => {
+  const sel = multiSelectedNodes.value
+  if (sel.length < 2) return
+  const memberIds = sel.map(n => n.id)
+  const minX = Math.min(...sel.map(n => n.position.x))
+  const maxX = Math.max(...sel.map(n => n.position.x))
+  const maxY = Math.max(...sel.map(n => n.position.y))
+  const cx = (minX + maxX) / 2 - 140
+  const cy = maxY + 100
+  const maxZ = Math.max(0, ...nodes.value.map(n => n.zIndex || 0))
+  const newId = addNode('text', { x: cx, y: cy }, {
+    label: `组引用 (${memberIds.length})`,
+    content: '',
+    bundleMemberIds: [...memberIds]
+  })
+  updateNode(newId, { zIndex: maxZ + 1 })
+  nodes.value = nodes.value.map(n => ({
+    ...n,
+    selected: n.id === newId
+  }))
+  nextTick(() => updateNodeInternals(newId))
+  window.$message?.success('已创建组引用节点，请连接到 LLM / 文生图 / 视频作为输入')
+}
 
 
 // Project info | 项目信息
@@ -861,6 +1005,7 @@ onMounted(() => {
 // Cleanup on unmount | 卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+  stopEdgeAutopan()
   // Save project before leaving | 离开前保存项目
   saveProject()
 })

@@ -149,6 +149,17 @@ import MentionsPicker from '../MentionsPicker.vue'
 import { useChat } from '../../hooks'
 import { useModelStore } from '../../stores/pinia'
 import { parseMentions, removeMention as removeMentionUtil } from '../../hooks/useNodeRef'
+import { aggregateBundleTexts } from '../../utils/bundleRefs'
+
+/** 文本节点正文：组引用展开 + 自身 content */
+const connectedTextBody = (node) => {
+  if (!node || node.type !== 'text') return ''
+  const own = node.data?.content || ''
+  const bundle = node.data?.bundleMemberIds?.length
+    ? aggregateBundleTexts(nodes.value, node.data.bundleMemberIds)
+    : ''
+  return [bundle, own].filter(Boolean).join('\n\n')
+}
 
 const props = defineProps({
   id: String,
@@ -395,7 +406,7 @@ const mentionsPreview = computed(() => {
       previews.push({
         nodeId: mention.nodeId,
         name: node.data?.label || node.data?.content?.slice(0, 20) || '文本',
-        content: node.data?.content || ''
+        content: connectedTextBody(node)
       })
     }
   }
@@ -731,7 +742,7 @@ const getInputFromConnections = () => {
     if (refsToThis.length > 0) {
       mentionsInputs.push({
         nodeId: textNode.id,
-        content: content,
+        content: connectedTextBody(textNode) || content,
         order: refsToThis[0].order
       })
     }
@@ -750,8 +761,9 @@ const getInputFromConnections = () => {
   for (const edge of incomingEdges) {
     const sourceNode = nodes.value.find(n => n.id === edge.source)
     if (sourceNode) {
-      if (sourceNode.type === 'text' && sourceNode.data?.content) {
-        inputs.push(sourceNode.data.content)
+      if (sourceNode.type === 'text') {
+        const body = connectedTextBody(sourceNode)
+        if (body) inputs.push(body)
       } else if (sourceNode.type === 'llmConfig' && sourceNode.data?.outputContent) {
         inputs.push(sourceNode.data.outputContent)
       }
@@ -781,10 +793,12 @@ const handleGenerate = async () => {
 
     for (const mention of mentions) {
       const node = nodes.value.find(n => n.id === mention.nodeId)
-      if (node?.type === 'text' && node.data?.content) {
-        // 替换 @[nodeId] 为节点内容
-        const placeholder = `@[${mention.nodeId}]`
-        resolved = resolved.replace(placeholder, node.data.content)
+      if (node?.type === 'text') {
+        const body = connectedTextBody(node)
+        if (body) {
+          const placeholder = `@[${mention.nodeId}]`
+          resolved = resolved.replace(placeholder, body)
+        }
       }
     }
 
@@ -798,8 +812,9 @@ const handleGenerate = async () => {
 
     for (const mention of mentions) {
       const node = nodes.value.find(n => n.id === mention.nodeId)
-      if (node?.type === 'text' && node.data?.content) {
-        contents.push(node.data.content)
+      if (node?.type === 'text') {
+        const body = connectedTextBody(node)
+        if (body) contents.push(body)
       }
     }
 

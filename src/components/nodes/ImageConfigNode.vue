@@ -170,6 +170,7 @@ import { getModelSizeOptions, getModelQualityOptions, getModelConfig, DEFAULT_IM
 import { usesVolcengineImageApi } from '../../config/models'
 import { getVolcengineApiKey } from '../../config/volcengineEnv'
 import { parseMentions } from '../../hooks/useNodeRef'
+import { aggregateBundleTexts, aggregateBundleRefImages } from '../../utils/bundleRefs'
 
 // 使用 Pinia store 获取模型选项（根据渠道过滤）
 const modelStore = useModelStore()
@@ -300,13 +301,20 @@ onMounted(() => {
   }
 })
 
-// 解析 textNode 内容中的 @ 引用，转换为简短引用（如 图 1）并收集图片
+// 解析 textNode 内容中的 @ 引用，转换为简短引用（如 图 1）并收集图片；合并组引用（bundle）中的文案与参考图
 const resolveTextMentionsForImage = (textNode) => {
   const content = textNode.data?.content || ''
   const mentions = parseMentions(content)
+  const bundleText = textNode.data?.bundleMemberIds?.length
+    ? aggregateBundleTexts(nodes.value, textNode.data.bundleMemberIds)
+    : ''
+  const bundleImgs = textNode.data?.bundleMemberIds?.length
+    ? aggregateBundleRefImages(nodes.value, textNode.data.bundleMemberIds)
+    : []
+  const prefix = bundleText ? `${bundleText}\n\n` : ''
 
   if (mentions.length === 0) {
-    return { resolvedContent: content, refImages: [] }
+    return { resolvedContent: (prefix + content).trim(), refImages: [...bundleImgs] }
   }
 
   // 收集引用的图片节点
@@ -326,7 +334,7 @@ const resolveTextMentionsForImage = (textNode) => {
   }
 
   if (imageMentions.length === 0) {
-    return { resolvedContent: content, refImages: [] }
+    return { resolvedContent: (prefix + content).trim(), refImages: [...bundleImgs] }
   }
 
   // 按出现顺序排序
@@ -341,10 +349,10 @@ const resolveTextMentionsForImage = (textNode) => {
     resolvedContent = resolvedContent.replace(placeholder, `图${i + 1}`)
   }
 
-  // 返回解析后的内容和图片数组（按引用顺序）
-  const refImages = imageMentions.map(m => m.imageData)
+  // 返回解析后的内容和图片数组（按引用顺序）；组内参考图在前
+  const refImages = [...bundleImgs, ...imageMentions.map(m => m.imageData)]
 
-  return { resolvedContent, refImages }
+  return { resolvedContent: (prefix + resolvedContent).trim(), refImages }
 }
 
 // Computed connected prompts (sorted by order) | 计算连接的提示词（按顺序排列）
@@ -380,24 +388,19 @@ const getConnectedInputs = () => {
 
   for (const textNode of textNodes) {
     const { resolvedContent, refImages: nodeRefImages } = resolveTextMentionsForImage(textNode)
+    if (!resolvedContent.trim() && nodeRefImages.length === 0) continue
 
-    // 如果有解析出图片引用
-    if (nodeRefImages.length > 0) {
-      // 添加解析后的提示词内容
-      mentionsPrompts.push({
-        order: mentionsPrompts.length,
-        content: resolvedContent,
+    mentionsPrompts.push({
+      order: mentionsPrompts.length,
+      content: resolvedContent.trim() || '(参考图)',
+      nodeId: textNode.id
+    })
+    for (const imageData of nodeRefImages) {
+      mentionsRefImages.push({
+        order: mentionsRefImages.length,
+        imageData,
         nodeId: textNode.id
       })
-
-      // 添加参考图
-      for (const imageData of nodeRefImages) {
-        mentionsRefImages.push({
-          order: mentionsRefImages.length,
-          imageData,
-          nodeId: textNode.id
-        })
-      }
     }
   }
 
@@ -453,7 +456,11 @@ const getConnectedInputs = () => {
     if (!sourceNode) continue
 
     if (sourceNode.type === 'text') {
-      const content = sourceNode.data?.content || ''
+      let content = sourceNode.data?.content || ''
+      if (sourceNode.data?.bundleMemberIds?.length) {
+        const bundle = aggregateBundleTexts(nodes.value, sourceNode.data.bundleMemberIds)
+        content = [bundle, content].filter(Boolean).join('\n\n')
+      }
       if (content) {
         // Get order from edge data, default to 1 | 从边数据获取顺序，默认为1
         const order = edge.data?.promptOrder || 1

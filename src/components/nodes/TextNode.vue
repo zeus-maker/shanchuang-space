@@ -43,6 +43,12 @@
 
       <!-- Content | 内容 -->
       <div class="p-3">
+        <div
+          v-if="data.bundleMemberIds?.length"
+          class="mb-2 px-2 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]"
+        >
+          组引用 · 已包含 {{ data.bundleMemberIds.length }} 个节点；可再输入补充说明，下游 LLM / 生图 / 视频会合并为输入。
+        </div>
         <div class="textarea-wrapper" ref="textareaWrapper">
           <!-- 可编辑的文本区域（支持 @ 引用图片显示）参考 MaterialInput -->
           <div

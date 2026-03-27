@@ -154,6 +154,7 @@ import { useModelStore } from '../../stores/pinia'
 import { getModelRatioOptions, getModelDurationOptions, getModelConfig, DEFAULT_VIDEO_MODEL } from '../../stores/models'
 import { usesVolcengineVideoApi } from '../../config/models'
 import { getVolcengineApiKey } from '../../config/volcengineEnv'
+import { aggregateBundleTexts, aggregateBundleRefImages } from '../../utils/bundleRefs'
 
 // 使用 Pinia store 获取模型选项（根据渠道过滤）
 const modelStore = useModelStore()
@@ -304,7 +305,17 @@ const getConnectedInputs = () => {
     if (!sourceNode) continue
 
     if (sourceNode.type === 'text') {
-      prompt = sourceNode.data?.content || ''
+      let t = sourceNode.data?.content || ''
+      if (sourceNode.data?.bundleMemberIds?.length) {
+        const b = aggregateBundleTexts(nodes.value, sourceNode.data.bundleMemberIds)
+        t = [b, t].filter(Boolean).join('\n\n')
+        const bundleImgs = aggregateBundleRefImages(nodes.value, sourceNode.data.bundleMemberIds)
+        for (const img of bundleImgs) {
+          if (!first_frame_image) first_frame_image = img
+          else images.push(img)
+        }
+      }
+      if (t) prompt = t
     } else if (sourceNode.type === 'llmConfig') {
       // LLM node output as prompt | LLM 节点输出作为提示词
       const content = sourceNode.data?.outputContent || ''

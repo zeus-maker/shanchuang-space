@@ -323,6 +323,63 @@ export const duplicateNode = (id) => {
   return newId
 }
 
+/**
+ * 批量复制节点（保留选中子图内的连线）| Duplicate multiple nodes with internal edges
+ * @param {string[]} ids - Node ids to duplicate | 要复制的节点 id
+ * @returns {string[]} - New node ids | 新节点 id 列表
+ */
+export const duplicateNodes = (ids) => {
+  if (!ids?.length) return []
+
+  const idSet = new Set(ids)
+  const sources = nodes.value.filter(n => idSet.has(n.id))
+  if (sources.length === 0) return []
+
+  const offset = 48
+  let zBase = Math.max(0, ...nodes.value.map(n => n.zIndex || 0))
+  const idMap = {}
+
+  startBatchOperation()
+
+  for (const node of sources) {
+    const newId = getNodeId()
+    idMap[node.id] = newId
+    zBase += 1
+    nodes.value = [
+      ...nodes.value,
+      {
+        id: newId,
+        type: node.type,
+        position: {
+          x: node.position.x + offset,
+          y: node.position.y + offset
+        },
+        data: JSON.parse(JSON.stringify(node.data || {})),
+        zIndex: zBase,
+        selected: false
+      }
+    ]
+  }
+
+  for (const edge of edges.value) {
+    if (idSet.has(edge.source) && idSet.has(edge.target)) {
+      const newEdge = {
+        id: `edge_${idMap[edge.source]}_${idMap[edge.target]}`,
+        source: idMap[edge.source],
+        target: idMap[edge.target],
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        type: edge.type,
+        data: edge.data ? JSON.parse(JSON.stringify(edge.data)) : undefined
+      }
+      edges.value = [...edges.value, newEdge]
+    }
+  }
+
+  endBatchOperation()
+  return Object.values(idMap)
+}
+
 // Add edge | 添加边
 export const addEdge = (params) => {
   const newEdge = {
