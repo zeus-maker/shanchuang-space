@@ -34,7 +34,8 @@ instance.interceptors.request.use(
     const noAuthEndpoints = ['/model/page', '/model/fullName', '/model/types']
     const isNoAuth = noAuthEndpoints.some(ep => config.url?.includes(ep))
 
-    if (apiKey && !isNoAuth) {
+    const existingAuth = config.headers?.Authorization ?? config.headers?.authorization
+    if (apiKey && !isNoAuth && !existingAuth) {
       config.headers['Authorization'] = `Bearer ${apiKey}`
     }
 

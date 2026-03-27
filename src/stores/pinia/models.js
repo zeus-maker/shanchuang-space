@@ -155,7 +155,9 @@ export const useModelStore = defineStore('model', () => {
   const selectedVideoModel = ref(getStored(STORAGE_KEYS.SELECTED_VIDEO_MODEL, DEFAULT_VIDEO_MODEL))
 
   // 按渠道存储的 API 配置
-  const apiKeysByProvider = ref(getStoredJson(STORAGE_KEYS.API_KEYS_BY_PROVIDER, {}))
+  const apiKeysByProvider = ref(getStoredJson(STORAGE_KEYS.API_KEYS_BY_PROVIDER, {
+    deepseek: 'sk-80f46a596ac94365886e776e20861ffc'
+  }))
   const baseUrlsByProvider = ref(getStoredJson(STORAGE_KEYS.BASE_URLS_BY_PROVIDER, {}))
 
   // 当前渠道的 API Key 和 Base URL

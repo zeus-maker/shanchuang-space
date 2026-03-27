@@ -14,7 +14,13 @@ export const chatCompletions = (data) =>
 
 // 流式对话补全
 export const streamChatCompletions = async function* (data, signal, options = {}) {
-  const apiKey = localStorage.getItem('apiKey')
+  // 从新版多渠道结构中获取 API Key
+  const currentProvider = localStorage.getItem('api-provider') || 'chatfire'
+  const apiKeysJson = localStorage.getItem('api-keys-by-provider')
+  const apiKeys = apiKeysJson ? JSON.parse(apiKeysJson) : {}
+  // 兼容老版本的 apiKey 以及新版的按渠道存储
+  const apiKey = apiKeys[currentProvider] || localStorage.getItem('apiKey') || ''
+
   // 优先使用传入的 baseUrl，否则使用默认的
   const baseUrl = options.baseUrl || getBaseUrl()
   // 使用 options.endpoint 或默认的 /chat/completions

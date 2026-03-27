@@ -37,7 +37,7 @@
       </template>
     </AppHeader>
 
-    <!-- Main canvas area | 主画布区域 -->
+    <!-- Main canvas area | Mac：触控板双指滑动平移；其它：滚轮缩放；空白处右键菜单 -->
     <div class="flex-1 relative overflow-hidden">
       <!-- Vue Flow canvas | Vue Flow 画布 -->
       <VueFlow
@@ -52,50 +52,60 @@
         :max-zoom="4"
         :snap-to-grid="true"
         :snap-grid="[20, 20]"
-        :pan-on-scroll="false"
-        :zoom-on-scroll="true"
+        :pan-on-scroll="canvasWheelPan"
+        :zoom-on-scroll="!canvasWheelPan"
         :zoom-on-pinch="true"
         :pan-on-drag="false"
         :selection-key-code="true"
         :zoom-on-double-click="false"
+        :elevate-nodes-on-select="true"
         @connect="onConnect"
         @node-click="onNodeClick"
         @pane-click="onPaneClick"
-        @pane-mouse-move="onPaneMouseMove"
-        @pane-mouse-leave="onPaneMouseLeave"
+        @pane-context-menu="onPaneContextMenu"
         @viewport-change-end="handleViewportChange"
         @edges-change="onEdgesChange"
         class="canvas-flow"
       >
-        <!-- 必须与节点同层：Vue Flow 默认插槽在 transformationpane 之外，流坐标会错位 | Groups in zoom-pane -->
+        <!-- zoom-pane 在节点之后绘制，故打组底框用 z-index 负值 + 不响应点击，节点保持可拖 | Groups under nodes -->
         <template #zoom-pane>
-          <div
-            v-for="g in canvasGroups"
-            :key="g.id"
-            class="absolute rounded-xl pointer-events-auto border-2 border-dashed transition-shadow"
-            :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
-            :style="groupFrameStyle(g)"
-            @pointerdown.stop
-            @click.stop="selectGroup(g.id)"
-          />
-          <div
-            v-if="selectedGroupId && groupToolbarPos"
-            class="absolute z-[2] flex flex-wrap items-center gap-0.5 p-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg max-w-[min(100vw,520px)]"
-            :style="{ left: `${groupToolbarPos.x}px`, top: `${groupToolbarPos.y}px` }"
-            @pointerdown.stop
-            @click.stop
-          >
-            <n-dropdown trigger="click" :options="groupFillDropdownOptions" @select="onGroupFillSelect">
-              <n-button size="tiny" quaternary>底色</n-button>
-            </n-dropdown>
-            <n-dropdown trigger="click" :options="groupLayoutDropdownOptions" @select="onGroupLayoutSelect">
-              <n-button size="tiny" quaternary>排列</n-button>
-            </n-dropdown>
-            <n-button size="tiny" quaternary @click="openGroupExecuteModal">整组执行</n-button>
-            <n-button size="tiny" quaternary @click="showToolboxNameModal = true">添加到工具箱</n-button>
-            <n-button size="tiny" quaternary @click="ungroupSelected">解组</n-button>
-            <n-button size="tiny" type="primary" @click="downloadSelectedGroup">批量下载</n-button>
-          </div>
+          <template v-for="g in canvasGroups" :key="g.id">
+            <div
+              class="absolute rounded-xl border-2 border-dashed transition-shadow pointer-events-none"
+              :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
+              :style="groupFrameStyle(g)"
+            />
+            <div
+              data-group-chrome="1"
+              class="absolute flex items-center justify-between gap-2 px-2 rounded-md bg-[var(--bg-secondary)]/95 border border-[var(--border-color)] shadow-sm text-[var(--text-primary)] hover:border-[var(--accent-color)]/50"
+              :class="selectedGroupId === g.id ? 'ring-1 ring-[var(--accent-color)]/40' : ''"
+              :style="groupStripStyle(g)"
+              @pointerdown.stop
+              @click.stop="selectGroup(g.id)"
+            >
+              <span class="text-xs font-medium truncate">分组 · {{ g.memberIds.length }} 节点</span>
+              <span class="text-[10px] text-[var(--text-tertiary)] shrink-0">{{ selectedGroupId === g.id ? '已选' : '点我选分组' }}</span>
+            </div>
+            <div
+              v-if="selectedGroupId === g.id"
+              data-group-chrome="1"
+              class="absolute flex flex-wrap items-center gap-0.5 p-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg"
+              :style="groupToolbarStyle(g)"
+              @pointerdown.stop
+              @click.stop
+            >
+              <n-dropdown trigger="click" :options="groupFillDropdownOptions" @select="onGroupFillSelect">
+                <n-button size="tiny" quaternary>底色</n-button>
+              </n-dropdown>
+              <n-dropdown trigger="click" :options="groupLayoutDropdownOptions" @select="onGroupLayoutSelect">
+                <n-button size="tiny" quaternary>排列</n-button>
+              </n-dropdown>
+              <n-button size="tiny" quaternary @click="openGroupExecuteModal">整组执行</n-button>
+              <n-button size="tiny" quaternary @click="showToolboxNameModal = true">添加到工具箱</n-button>
+              <n-button size="tiny" quaternary @click="ungroupSelected">解组</n-button>
+              <n-button size="tiny" type="primary" @click="downloadSelectedGroup">批量下载</n-button>
+            </div>
+          </template>
         </template>
         <Background v-if="showGrid" :gap="20" :size="1" />
         <MiniMap 
@@ -105,6 +115,40 @@
           :zoomable="true"
         />
       </VueFlow>
+
+      <!-- 画布空白处右键菜单 | Pane context menu -->
+      <Teleport to="body">
+        <div
+          v-if="paneContextMenuOpen"
+          ref="paneContextMenuRef"
+          class="fixed z-[5000] min-w-[160px] py-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-xl text-[var(--text-primary)]"
+          :style="{ left: paneMenuX + 'px', top: paneMenuY + 'px' }"
+          role="menu"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-tertiary)] transition-colors"
+            @click="paneMenuFitView"
+          >
+            适应视图
+          </button>
+          <button
+            type="button"
+            class="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-tertiary)] transition-colors"
+            @click="paneMenuZoomIn"
+          >
+            放大
+          </button>
+          <button
+            type="button"
+            class="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-tertiary)] transition-colors"
+            @click="paneMenuZoomOut"
+          >
+            缩小
+          </button>
+        </div>
+      </Teleport>
 
       <!-- 多选批量操作 | Multi-selection toolbar -->
       <div
@@ -189,8 +233,11 @@
             <n-icon :size="14"><AddOutline /></n-icon>
           </button>
         </div>
-        <span class="text-[10px] text-[var(--text-tertiary)] px-1 max-w-[160px] leading-tight hidden sm:inline" title="平移画布方式">
-          空白处移动鼠标平移；左键拖框多选
+        <span
+          class="text-[10px] text-[var(--text-tertiary)] px-1 max-w-[280px] leading-tight hidden sm:inline"
+          title="平移/缩放画布"
+        >
+          {{ canvasWheelPan ? '双指滑动平移；⌃+滚轮或捏合缩放；右键菜单；左键拖框' : '滚轮缩放；右键菜单；左键拖框多选' }}
         </span>
       </div>
 
@@ -428,7 +475,72 @@ const router = useRouter()
 const route = useRoute()
 
 // Vue Flow instance | Vue Flow 实例
-const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals, setViewport } = useVueFlow()
+const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals } = useVueFlow()
+
+/** Apple 平台启用触控板双指滑动平移（pan-on-scroll）；Windows 等仍用滚轮缩放（zoom-on-scroll）| Trackpad pan on Mac */
+const canvasWheelPan = ref(false)
+
+/** 空白画布右键菜单 | Pane context menu */
+const paneContextMenuOpen = ref(false)
+const paneMenuX = ref(0)
+const paneMenuY = ref(0)
+const paneContextMenuRef = ref(null)
+let unbindPaneMenuDismiss = null
+
+function closePaneContextMenu() {
+  paneContextMenuOpen.value = false
+  if (unbindPaneMenuDismiss) {
+    unbindPaneMenuDismiss()
+    unbindPaneMenuDismiss = null
+  }
+}
+
+function openPaneContextMenu(clientX, clientY) {
+  closePaneContextMenu()
+  const w = 168
+  const h = 132
+  paneMenuX.value = Math.max(8, Math.min(clientX, (typeof window !== 'undefined' ? window.innerWidth : clientX + w) - w))
+  paneMenuY.value = Math.max(8, Math.min(clientY, (typeof window !== 'undefined' ? window.innerHeight : clientY + h) - h))
+  paneContextMenuOpen.value = true
+  nextTick(() => {
+    const dismiss = (ev) => {
+      if (ev.type === 'keydown') {
+        if (ev.key === 'Escape') closePaneContextMenu()
+        return
+      }
+      const el = paneContextMenuRef.value
+      if (el && ev.target && el.contains(ev.target)) return
+      closePaneContextMenu()
+    }
+    window.addEventListener('pointerdown', dismiss, true)
+    window.addEventListener('keydown', dismiss, true)
+    unbindPaneMenuDismiss = () => {
+      window.removeEventListener('pointerdown', dismiss, true)
+      window.removeEventListener('keydown', dismiss, true)
+      unbindPaneMenuDismiss = null
+    }
+  })
+}
+
+const onPaneContextMenu = (event) => {
+  event.preventDefault()
+  openPaneContextMenu(event.clientX, event.clientY)
+}
+
+const paneMenuFitView = () => {
+  closePaneContextMenu()
+  void fitView({ padding: 0.2 })
+}
+
+const paneMenuZoomIn = () => {
+  closePaneContextMenu()
+  void zoomIn()
+}
+
+const paneMenuZoomOut = () => {
+  closePaneContextMenu()
+  void zoomOut()
+}
 
 // Register custom node types | 注册自定义节点类型
 const nodeTypes = {
@@ -512,6 +624,10 @@ const groupLayoutDropdownOptions = [
 
 const groupFillBackground = (key) => GROUP_FILL_BG[key] || GROUP_FILL_BG.c1
 
+const STRIP_H = 28
+const GAP_ABOVE_FRAME = 6
+const GAP_TOOLBAR_STRIP = 6
+
 const groupFrameStyle = (g) => {
   const { x, y, width, height } = computeGroupBounds(g.memberIds, nodes.value)
   return {
@@ -520,17 +636,37 @@ const groupFrameStyle = (g) => {
     width: `${width}px`,
     height: `${height}px`,
     background: groupFillBackground(g.fillKey),
-    zIndex: 0
+    zIndex: -1
   }
 }
 
-const groupToolbarPos = computed(() => {
-  if (!selectedGroupId.value) return null
-  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
-  if (!g) return null
+/** 打组顶栏：贴在框上沿之上，用于选中分组（底框不响应事件）| Strip above frame */
+const groupStripStyle = (g) => {
   const b = computeGroupBounds(g.memberIds, nodes.value)
-  return { x: b.x, y: Math.max(0, b.y - 46) }
-})
+  return {
+    left: `${b.x}px`,
+    top: `${b.y - GAP_ABOVE_FRAME}px`,
+    width: `${b.width}px`,
+    height: `${STRIP_H}px`,
+    transform: 'translateY(-100%)',
+    zIndex: 20,
+    pointerEvents: 'auto'
+  }
+}
+
+/** 工具栏在顶栏之上，避免压在半透明框内挡操作 | Toolbar above strip */
+const groupToolbarStyle = (g) => {
+  const b = computeGroupBounds(g.memberIds, nodes.value)
+  const anchorY = b.y - GAP_ABOVE_FRAME - STRIP_H - GAP_TOOLBAR_STRIP
+  return {
+    left: `${b.x}px`,
+    top: `${anchorY}px`,
+    transform: 'translateY(-100%)',
+    zIndex: 25,
+    maxWidth: `${Math.min(Math.max(b.width, 220), 560)}px`,
+    pointerEvents: 'auto'
+  }
+}
 
 function topoSortMembers (memberIds, edgesList) {
   const set = new Set(memberIds)
@@ -573,12 +709,14 @@ const selectGroup = (id) => {
 
 const onGroupFillSelect = (key) => {
   if (!selectedGroupId.value) return
-  updateCanvasGroup(selectedGroupId.value, { fillKey: key })
+  const k = typeof key === 'object' && key != null && 'key' in key ? key.key : key
+  updateCanvasGroup(selectedGroupId.value, { fillKey: k })
 }
 
 const onGroupLayoutSelect = (key) => {
   if (!selectedGroupId.value) return
-  layoutGroupMembers(selectedGroupId.value, key === 'horizontal' ? 'horizontal' : 'grid')
+  const k = typeof key === 'object' && key != null && 'key' in key ? key.key : key
+  layoutGroupMembers(selectedGroupId.value, k === 'horizontal' ? 'horizontal' : 'grid')
 }
 
 const openGroupExecuteModal = () => {
@@ -627,21 +765,6 @@ const confirmToolboxSave = () => {
     window.$message?.error('保存失败')
   }
 }
-
-/**
- * 空白画布上移动鼠标即平移视口（无按键、非输入聚焦）| Hover-move pan
- */
-const onPaneMouseMove = (e) => {
-  if (e.buttons !== 0) return
-  const ae = document.activeElement
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return
-  const { movementX, movementY } = e
-  if (!movementX && !movementY) return
-  const { x, y, zoom } = viewport.value
-  setViewport({ x: x + movementX * 0.92, y: y + movementY * 0.92, zoom })
-}
-
-const onPaneMouseLeave = () => {}
 
 const saveSelectionToMaterials = () => {
   const projectId = route.params.id
@@ -899,16 +1022,8 @@ const onConnect = (params) => {
     addEdge(params)
   }
 }
-const onNodeClick = (event) => {
-  // nodes.value.forEach(node => {
-  //   updateNode(node.id, { selected: false })
-  // })
-  
-  // // Select clicked node | 选中的节点
-  // const clickedNode = nodes.value.find(n => n.id === event.node.id)
-  // if (clickedNode) {
-  //   updateNode(event.node.id, { selected: true })
-  // }
+const onNodeClick = () => {
+  selectedGroupId.value = null
 }
 
 // 仅在平移/缩放结束后写入 store，避免拖拽过程中每帧触发响应式与防抖保存导致卡顿
@@ -933,6 +1048,7 @@ const onEdgesChange = (changes) => {
 const onPaneClick = () => {
   showNodeMenu.value = false
   selectedGroupId.value = null
+  closePaneContextMenu()
 }
 
 // Handle project action | 处理项目操作
@@ -1136,6 +1252,13 @@ watch(
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+
+  if (typeof navigator !== 'undefined') {
+    const pf = navigator.platform || ''
+    const ua = navigator.userAgent || ''
+    const phoneLike = /\biPhone\b|\biPod\b/i.test(ua)
+    canvasWheelPan.value = !phoneLike && (/^Mac/i.test(pf) || /Mac OS X/.test(ua))
+  }
   
   // Initialize projects store | 初始化项目存储
   initProjectsStore()
@@ -1158,6 +1281,7 @@ onMounted(() => {
 // Cleanup on unmount | 卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+  closePaneContextMenu()
   // Save project before leaving | 离开前保存项目
   saveProject()
 })
@@ -1176,5 +1300,15 @@ onUnmounted(() => {
 
 .canvas-flow :deep(.vue-flow__viewport) {
   touch-action: none;
+}
+
+/* 打组底框在 zoom-pane 且 z-index 为负；保证节点与边叠在底框之上 | Nodes above group tint */
+.canvas-flow :deep(.vue-flow__nodes) {
+  position: relative;
+  z-index: 1;
+}
+.canvas-flow :deep(.vue-flow__edges) {
+  position: relative;
+  z-index: 0;
 }
 </style>

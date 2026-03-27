@@ -23,7 +23,10 @@ export const canvasGroups = ref([])
 let groupIdSeq = 0
 const nextGroupId = () => `grp_${groupIdSeq++}`
 
-/** 估算节点占位宽高（与打组框计算一致）| Estimated node dimensions for group bounds */
+/** 打组框内边距（流坐标）| Padding around tight node hull */
+export const GROUP_FRAME_PAD = 14
+
+/** 估算节点占位宽高（无实测时的回退）| Fallback when Vue Flow 尚未写入 dimensions */
 export const estimateNodeSize = (node) => {
   const t = node?.type
   const map = {
@@ -38,6 +41,23 @@ export const estimateNodeSize = (node) => {
 }
 
 /**
+ * 优先使用 Vue Flow 实测的 dimensions，使打组框贴近真实选中范围 | Measured size when available
+ */
+export const getNodeBodySize = (node) => {
+  const dw = node?.dimensions?.width
+  const dh = node?.dimensions?.height
+  if (typeof dw === 'number' && dw > 0 && typeof dh === 'number' && dh > 0) {
+    return [dw, dh]
+  }
+  const nw = node?.width
+  const nh = node?.height
+  if (typeof nw === 'number' && nw > 0 && typeof nh === 'number' && nh > 0) {
+    return [nw, nh]
+  }
+  return estimateNodeSize(node)
+}
+
+/**
  * 根据成员节点计算打组矩形（流坐标）| Flow-space bounds for group frame
  */
 export const computeGroupBounds = (memberIds, allNodes) => {
@@ -45,13 +65,13 @@ export const computeGroupBounds = (memberIds, allNodes) => {
   if (members.length === 0) {
     return { x: 0, y: 0, width: 320, height: 240 }
   }
-  const pad = 28
+  const pad = GROUP_FRAME_PAD
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
   for (const n of members) {
-    const [w, h] = estimateNodeSize(n)
+    const [w, h] = getNodeBodySize(n)
     minX = Math.min(minX, n.position.x)
     minY = Math.min(minY, n.position.y)
     maxX = Math.max(maxX, n.position.x + w)
@@ -98,8 +118,8 @@ export const layoutGroupMembers = (groupId, mode) => {
   if (members.length === 0) return
   const bounds = computeGroupBounds(g.memberIds, nodes.value)
   const gap = 32
-  const startX = bounds.x + 28
-  const startY = bounds.y + 28
+  const startX = bounds.x + GROUP_FRAME_PAD
+  const startY = bounds.y + GROUP_FRAME_PAD
   if (mode === 'horizontal') {
     let x = startX
     const midY = startY
@@ -107,7 +127,7 @@ export const layoutGroupMembers = (groupId, mode) => {
       .slice()
       .sort((a, b) => a.position.x - b.position.x)
       .forEach((n) => {
-        const [w] = estimateNodeSize(n)
+        const [w] = getNodeBodySize(n)
         const idx = nodes.value.findIndex(node => node.id === n.id)
         if (idx !== -1) {
           nodes.value[idx] = {

@@ -10,6 +10,7 @@
 
 import { ref, watch } from 'vue'
 import { streamChatCompletions } from '@/api'
+import { useModelStore } from '@/stores/pinia'
 import { 
   nodes, 
   addNode, 
@@ -307,14 +308,25 @@ export const useWorkflowOrchestrator = () => {
     isAnalyzing.value = true
     
     try {
+      // Get the correct base url and endpoint for the current provider
+      const modelStore = useModelStore()
+      const chatEndpoint = modelStore.getChatEndpoint()
+      const url = new URL(chatEndpoint)
+      const baseUrl = url.origin
+      const endpoint = url.pathname
+
       let response = ''
-      for await (const chunk of streamChatCompletions({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: INTENT_ANALYSIS_PROMPT },
-          { role: 'user', content: userInput }
-        ]
-      })) {
+      for await (const chunk of streamChatCompletions(
+        {
+          model: modelStore.selectedChatModel || 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: INTENT_ANALYSIS_PROMPT },
+            { role: 'user', content: userInput }
+          ]
+        },
+        null, // No signal for now
+        { baseUrl, endpoint }
+      )) {
         response += chunk
       }
       
