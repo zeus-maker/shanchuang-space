@@ -68,6 +68,35 @@
         class="canvas-flow"
       >
         <Background v-if="showGrid" :gap="20" :size="1" />
+        <!-- 打组框（流坐标，随缩放平移）| Group frames in flow space -->
+        <div
+          v-for="g in canvasGroups"
+          :key="g.id"
+          class="absolute rounded-xl pointer-events-auto border-2 border-dashed transition-shadow"
+          :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
+          :style="groupFrameStyle(g)"
+          @pointerdown.stop
+          @click.stop="selectGroup(g.id)"
+        />
+        <!-- 选中分组的工具栏（流坐标）| Group toolbar -->
+        <div
+          v-if="selectedGroupId && groupToolbarPos"
+          class="absolute z-[2] flex flex-wrap items-center gap-0.5 p-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg max-w-[min(100vw,520px)]"
+          :style="{ left: `${groupToolbarPos.x}px`, top: `${groupToolbarPos.y}px` }"
+          @pointerdown.stop
+          @click.stop
+        >
+          <n-dropdown trigger="click" :options="groupFillDropdownOptions" @select="onGroupFillSelect">
+            <n-button size="tiny" quaternary>底色</n-button>
+          </n-dropdown>
+          <n-dropdown trigger="click" :options="groupLayoutDropdownOptions" @select="onGroupLayoutSelect">
+            <n-button size="tiny" quaternary>排列</n-button>
+          </n-dropdown>
+          <n-button size="tiny" quaternary @click="openGroupExecuteModal">整组执行</n-button>
+          <n-button size="tiny" quaternary @click="showToolboxNameModal = true">添加到工具箱</n-button>
+          <n-button size="tiny" quaternary @click="ungroupSelected">解组</n-button>
+          <n-button size="tiny" type="primary" @click="downloadSelectedGroup">批量下载</n-button>
+        </div>
         <MiniMap 
           v-if="!isMobile"
           position="bottom-right"
@@ -85,7 +114,7 @@
         <n-button size="small" quaternary @click="saveSelectionToMaterials">保存到素材</n-button>
         <n-button size="small" quaternary @click="batchDownloadSelection">批量下载</n-button>
         <n-button size="small" quaternary @click="duplicateSelection">创建副本</n-button>
-        <n-button size="small" type="primary" @click="createBundleRefNode">打组</n-button>
+        <n-button size="small" type="primary" @click="createCanvasGroupFromSelection">打组</n-button>
       </div>
 
       <!-- Left toolbar | 左侧工具栏 -->
@@ -159,8 +188,8 @@
             <n-icon :size="14"><AddOutline /></n-icon>
           </button>
         </div>
-        <span class="text-[10px] text-[var(--text-tertiary)] px-1 max-w-[140px] leading-tight hidden sm:inline" title="平移画布方式">
-          空格+拖移平移；贴边悬停自动滑动；左键拖框多选
+        <span class="text-[10px] text-[var(--text-tertiary)] px-1 max-w-[160px] leading-tight hidden sm:inline" title="平移画布方式">
+          空白处移动鼠标平移；左键拖框多选
         </span>
       </div>
 
@@ -262,6 +291,29 @@
 
     <!-- Workflow Panel | 工作流面板 -->
     <WorkflowPanel v-model:show="showWorkflowPanel" @add-workflow="handleAddWorkflow" />
+
+    <!-- 整组执行说明 | Group execute info -->
+    <n-modal v-model:show="showGroupExecuteModal" preset="card" title="整组执行" style="width: 480px; max-width: 92vw;">
+      <p class="text-sm text-[var(--text-secondary)] mb-2">按连线依赖排序后的执行顺序（仅供参考）。自动串联各节点生成接口后续可接入；当前请按顺序在节点上手动点击生成。</p>
+      <n-input v-model:value="groupExecutePromptNote" type="textarea" placeholder="可选：整组提示说明（将记入本次操作，暂不自动注入各节点）" :rows="3" class="mb-3" />
+      <ol class="text-sm list-decimal pl-5 space-y-1 max-h-48 overflow-y-auto">
+        <li v-for="nid in groupExecuteOrder" :key="nid">
+          {{ nodeLabelForId(nid) }} <span class="text-[var(--text-tertiary)]">({{ nid }})</span>
+        </li>
+      </ol>
+      <template #footer>
+        <n-button @click="showGroupExecuteModal = false">关闭</n-button>
+      </template>
+    </n-modal>
+
+    <!-- 添加到工具箱 | Save to local toolbox -->
+    <n-modal v-model:show="showToolboxNameModal" preset="dialog" title="添加到工具箱">
+      <n-input v-model:value="toolboxNameInput" placeholder="为此分组命名" @keydown.enter="confirmToolboxSave" />
+      <template #action>
+        <n-button @click="showToolboxNameModal = false">取消</n-button>
+        <n-button type="primary" :disabled="!toolboxNameInput.trim()" @click="confirmToolboxSave">保存</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -297,7 +349,7 @@ import {
   AppsOutline,
   ChatbubbleOutline
 } from '@vicons/ionicons5'
-import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes } from '../stores/canvas'
+import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds } from '../stores/canvas'
 import { loadAllModels } from '../stores/models'
 import { useChat, useWorkflowOrchestrator } from '../hooks'
 import { useModelStore } from '../stores/pinia'
@@ -423,61 +475,172 @@ const hasDownloadableAssets = computed(() => {
 /** 当前多选节点（至少 2 个时显示批量工具栏）| Selected nodes for batch actions */
 const multiSelectedNodes = computed(() => nodes.value.filter(n => n.selected))
 
-const EDGE_AUTOPAN_MARGIN = 56
-const EDGE_AUTOPAN_SPEED = 7
-const edgeAutopanVel = { x: 0, y: 0 }
-let edgeAutopanRaf = null
+/** 选中打组 id（点击半透明框）| Selected canvas group */
+const selectedGroupId = ref(null)
+const showGroupExecuteModal = ref(false)
+const groupExecutePromptNote = ref('')
+const groupExecuteOrder = ref([])
+const showToolboxNameModal = ref(false)
+const toolboxNameInput = ref('')
+const TOOLBOX_STORAGE_KEY = 'huobao-canvas-toolbox'
 
-const stopEdgeAutopan = () => {
-  edgeAutopanVel.x = 0
-  edgeAutopanVel.y = 0
-  if (edgeAutopanRaf != null) {
-    cancelAnimationFrame(edgeAutopanRaf)
-    edgeAutopanRaf = null
+const GROUP_FILL_BG = {
+  none: 'transparent',
+  c1: 'rgba(59, 130, 246, 0.14)',
+  c2: 'rgba(168, 85, 247, 0.14)',
+  c3: 'rgba(34, 197, 94, 0.14)',
+  c4: 'rgba(245, 158, 11, 0.14)',
+  c5: 'rgba(236, 72, 153, 0.14)',
+  c6: 'rgba(20, 184, 166, 0.14)'
+}
+
+const groupFillDropdownOptions = [
+  { label: '不使用', key: 'none' },
+  { label: '浅蓝', key: 'c1' },
+  { label: '浅紫', key: 'c2' },
+  { label: '浅绿', key: 'c3' },
+  { label: '浅琥珀', key: 'c4' },
+  { label: '浅粉', key: 'c5' },
+  { label: '浅青', key: 'c6' }
+]
+
+const groupLayoutDropdownOptions = [
+  { label: '宫格排列', key: 'grid' },
+  { label: '水平排列', key: 'horizontal' }
+]
+
+const groupFillBackground = (key) => GROUP_FILL_BG[key] || GROUP_FILL_BG.c1
+
+const groupFrameStyle = (g) => {
+  const { x, y, width, height } = computeGroupBounds(g.memberIds, nodes.value)
+  return {
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+    background: groupFillBackground(g.fillKey),
+    zIndex: 0
   }
 }
 
-const tickEdgeAutopan = () => {
-  edgeAutopanRaf = null
-  if (edgeAutopanVel.x === 0 && edgeAutopanVel.y === 0) return
-  const { x, y, zoom } = viewport.value
-  setViewport({ x: x + edgeAutopanVel.x, y: y + edgeAutopanVel.y, zoom })
-  edgeAutopanRaf = requestAnimationFrame(tickEdgeAutopan)
+const groupToolbarPos = computed(() => {
+  if (!selectedGroupId.value) return null
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return null
+  const b = computeGroupBounds(g.memberIds, nodes.value)
+  return { x: b.x, y: Math.max(0, b.y - 46) }
+})
+
+function topoSortMembers (memberIds, edgesList) {
+  const set = new Set(memberIds)
+  const sub = edgesList.filter(e => set.has(e.source) && set.has(e.target))
+  const indeg = new Map()
+  memberIds.forEach(id => indeg.set(id, 0))
+  sub.forEach(e => {
+    indeg.set(e.target, (indeg.get(e.target) || 0) + 1)
+  })
+  const q = memberIds.filter(id => (indeg.get(id) || 0) === 0)
+  const out = []
+  const seen = new Set()
+  while (q.length) {
+    const u = q.shift()
+    out.push(u)
+    seen.add(u)
+    sub.filter(e => e.source === u).forEach(e => {
+      const t = e.target
+      indeg.set(t, indeg.get(t) - 1)
+      if (indeg.get(t) === 0) q.push(t)
+    })
+  }
+  memberIds.forEach(id => {
+    if (!seen.has(id)) out.push(id)
+  })
+  return out
+}
+
+const nodeLabelForId = (id) => {
+  const n = nodes.value.find(x => x.id === id)
+  if (!n) return '节点'
+  const map = { text: '文本', llmConfig: 'LLM', imageConfig: '文生图', videoConfig: '视频', image: '图片', video: '视频' }
+  return n.data?.label || map[n.type] || n.type
+}
+
+const selectGroup = (id) => {
+  selectedGroupId.value = id
+  nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
+}
+
+const onGroupFillSelect = (key) => {
+  if (!selectedGroupId.value) return
+  updateCanvasGroup(selectedGroupId.value, { fillKey: key })
+}
+
+const onGroupLayoutSelect = (key) => {
+  if (!selectedGroupId.value) return
+  layoutGroupMembers(selectedGroupId.value, key === 'horizontal' ? 'horizontal' : 'grid')
+}
+
+const openGroupExecuteModal = () => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return
+  groupExecuteOrder.value = topoSortMembers(g.memberIds, edges.value)
+  showGroupExecuteModal.value = true
+}
+
+const ungroupSelected = () => {
+  if (!selectedGroupId.value) return
+  removeCanvasGroup(selectedGroupId.value)
+  selectedGroupId.value = null
+}
+
+const downloadSelectedGroup = () => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return
+  const list = nodes.value.filter(n =>
+    g.memberIds.includes(n.id) && (n.type === 'image' || n.type === 'video') && n.data?.url
+  )
+  if (list.length === 0) {
+    window.$message?.info('组内没有可下载的图片/视频链接')
+    return
+  }
+  list.forEach(n => window.open(n.data.url, '_blank'))
+  window.$message?.success(`已打开 ${list.length} 个链接`)
+}
+
+const confirmToolboxSave = () => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g || !toolboxNameInput.value.trim()) return
+  try {
+    const raw = JSON.parse(localStorage.getItem(TOOLBOX_STORAGE_KEY) || '[]')
+    raw.push({
+      name: toolboxNameInput.value.trim(),
+      memberIds: [...g.memberIds],
+      fillKey: g.fillKey,
+      savedAt: Date.now()
+    })
+    localStorage.setItem(TOOLBOX_STORAGE_KEY, JSON.stringify(raw))
+    window.$message?.success('已保存到本地工具箱')
+    showToolboxNameModal.value = false
+    toolboxNameInput.value = ''
+  } catch {
+    window.$message?.error('保存失败')
+  }
 }
 
 /**
- * 画布边缘悬停时自动平移视口（无按键、非输入框聚焦时）| Edge auto-pan on hover
+ * 空白画布上移动鼠标即平移视口（无按键、非输入聚焦）| Hover-move pan
  */
 const onPaneMouseMove = (e) => {
-  if (e.buttons !== 0) {
-    stopEdgeAutopan()
-    return
-  }
+  if (e.buttons !== 0) return
   const ae = document.activeElement
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) {
-    stopEdgeAutopan()
-    return
-  }
-  const el = e.currentTarget || e.target
-  if (!el?.getBoundingClientRect) return
-  const rect = el.getBoundingClientRect()
-  let vx = 0
-  let vy = 0
-  if (e.clientX - rect.left < EDGE_AUTOPAN_MARGIN) vx = EDGE_AUTOPAN_SPEED
-  else if (rect.right - e.clientX < EDGE_AUTOPAN_MARGIN) vx = -EDGE_AUTOPAN_SPEED
-  if (e.clientY - rect.top < EDGE_AUTOPAN_MARGIN) vy = EDGE_AUTOPAN_SPEED
-  else if (rect.bottom - e.clientY < EDGE_AUTOPAN_MARGIN) vy = -EDGE_AUTOPAN_SPEED
-  edgeAutopanVel.x = vx
-  edgeAutopanVel.y = vy
-  if ((vx !== 0 || vy !== 0) && edgeAutopanRaf == null) {
-    edgeAutopanRaf = requestAnimationFrame(tickEdgeAutopan)
-  }
-  if (vx === 0 && vy === 0) stopEdgeAutopan()
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return
+  const { movementX, movementY } = e
+  if (!movementX && !movementY) return
+  const { x, y, zoom } = viewport.value
+  setViewport({ x: x + movementX * 0.92, y: y + movementY * 0.92, zoom })
 }
 
-const onPaneMouseLeave = () => {
-  stopEdgeAutopan()
-}
+const onPaneMouseLeave = () => {}
 
 const saveSelectionToMaterials = () => {
   const projectId = route.params.id
@@ -522,28 +685,14 @@ const duplicateSelection = () => {
   window.$message?.success(`已创建 ${newIds.length} 个副本`)
 }
 
-const createBundleRefNode = () => {
+const createCanvasGroupFromSelection = () => {
   const sel = multiSelectedNodes.value
   if (sel.length < 2) return
-  const memberIds = sel.map(n => n.id)
-  const minX = Math.min(...sel.map(n => n.position.x))
-  const maxX = Math.max(...sel.map(n => n.position.x))
-  const maxY = Math.max(...sel.map(n => n.position.y))
-  const cx = (minX + maxX) / 2 - 140
-  const cy = maxY + 100
-  const maxZ = Math.max(0, ...nodes.value.map(n => n.zIndex || 0))
-  const newId = addNode('text', { x: cx, y: cy }, {
-    label: `组引用 (${memberIds.length})`,
-    content: '',
-    bundleMemberIds: [...memberIds]
-  })
-  updateNode(newId, { zIndex: maxZ + 1 })
-  nodes.value = nodes.value.map(n => ({
-    ...n,
-    selected: n.id === newId
-  }))
-  nextTick(() => updateNodeInternals(newId))
-  window.$message?.success('已创建组引用节点，请连接到 LLM / 文生图 / 视频作为输入')
+  const gid = addCanvasGroup(sel.map(n => n.id))
+  if (!gid) return
+  nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
+  selectedGroupId.value = gid
+  window.$message?.success('已打组：点击半透明区域可使用工具栏')
 }
 
 
@@ -782,11 +931,7 @@ const onEdgesChange = (changes) => {
 // Handle pane click | 处理画布点击
 const onPaneClick = () => {
   showNodeMenu.value = false
-  // Clear all selections | 清除所有选中
-  // nodes.value = nodes.value.map(node => ({
-  //   ...node,
-  //   selected: false
-  // }))
+  selectedGroupId.value = null
 }
 
 // Handle project action | 处理项目操作
@@ -953,9 +1098,10 @@ const checkMobile = () => {
 
 // Load project by ID | 根据ID加载项目
 const loadProjectById = (projectId) => {
+  selectedGroupId.value = null
   // Update flow key to force VueFlow re-render | 更新 key 强制 VueFlow 重新渲染
   flowKey.value = Date.now()
-  
+
   if (projectId && projectId !== 'new') {
     loadProject(projectId)
   } else {
@@ -963,6 +1109,12 @@ const loadProjectById = (projectId) => {
     clearCanvas()
   }
 }
+
+watch(canvasGroups, (list) => {
+  if (selectedGroupId.value && !list.some(g => g.id === selectedGroupId.value)) {
+    selectedGroupId.value = null
+  }
+}, { deep: true })
 
 // Watch for route changes | 监听路由变化
 watch(
@@ -1005,7 +1157,6 @@ onMounted(() => {
 // Cleanup on unmount | 卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
-  stopEdgeAutopan()
   // Save project before leaving | 离开前保存项目
   saveProject()
 })

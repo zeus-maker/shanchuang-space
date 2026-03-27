@@ -17,6 +17,126 @@ export const currentProjectId = ref(null)
 export const nodes = ref([])
 export const edges = ref([])
 
+/** 画布打组（非节点）：仅存成员 id 与底色键，框范围由成员位置实时推算 | Visual groups */
+export const canvasGroups = ref([])
+
+let groupIdSeq = 0
+const nextGroupId = () => `grp_${groupIdSeq++}`
+
+/** 估算节点占位宽高（与打组框计算一致）| Estimated node dimensions for group bounds */
+export const estimateNodeSize = (node) => {
+  const t = node?.type
+  const map = {
+    text: [300, 220],
+    llmConfig: [360, 420],
+    imageConfig: [340, 520],
+    videoConfig: [340, 400],
+    image: [280, 260],
+    video: [280, 220]
+  }
+  return map[t] || [300, 220]
+}
+
+/**
+ * 根据成员节点计算打组矩形（流坐标）| Flow-space bounds for group frame
+ */
+export const computeGroupBounds = (memberIds, allNodes) => {
+  const members = allNodes.filter(n => memberIds.includes(n.id))
+  if (members.length === 0) {
+    return { x: 0, y: 0, width: 320, height: 240 }
+  }
+  const pad = 28
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const n of members) {
+    const [w, h] = estimateNodeSize(n)
+    minX = Math.min(minX, n.position.x)
+    minY = Math.min(minY, n.position.y)
+    maxX = Math.max(maxX, n.position.x + w)
+    maxY = Math.max(maxY, n.position.y + h)
+  }
+  return {
+    x: minX - pad,
+    y: minY - pad,
+    width: maxX - minX + pad * 2,
+    height: maxY - minY + pad * 2
+  }
+}
+
+export const addCanvasGroup = (memberIds) => {
+  const ids = [...new Set(memberIds)].filter(id => nodes.value.some(n => n.id === id))
+  if (ids.length < 2) return null
+  const g = {
+    id: nextGroupId(),
+    memberIds: ids,
+    fillKey: 'c1'
+  }
+  canvasGroups.value = [...canvasGroups.value, g]
+  saveToHistory()
+  return g.id
+}
+
+export const removeCanvasGroup = (id) => {
+  canvasGroups.value = canvasGroups.value.filter(g => g.id !== id)
+  saveToHistory()
+}
+
+export const updateCanvasGroup = (id, partial) => {
+  canvasGroups.value = canvasGroups.value.map(g =>
+    g.id === id ? { ...g, ...partial } : g
+  )
+  saveToHistory()
+}
+
+/** 宫格 / 水平排列成员节点 | Layout member nodes inside group */
+export const layoutGroupMembers = (groupId, mode) => {
+  const g = canvasGroups.value.find(x => x.id === groupId)
+  if (!g) return
+  const members = nodes.value.filter(n => g.memberIds.includes(n.id))
+  if (members.length === 0) return
+  const bounds = computeGroupBounds(g.memberIds, nodes.value)
+  const gap = 32
+  const startX = bounds.x + 28
+  const startY = bounds.y + 28
+  if (mode === 'horizontal') {
+    let x = startX
+    const midY = startY
+    members
+      .slice()
+      .sort((a, b) => a.position.x - b.position.x)
+      .forEach((n) => {
+        const [w] = estimateNodeSize(n)
+        const idx = nodes.value.findIndex(node => node.id === n.id)
+        if (idx !== -1) {
+          nodes.value[idx] = {
+            ...nodes.value[idx],
+            position: { x, y: midY }
+          }
+        }
+        x += w + gap
+      })
+  } else {
+    const cols = Math.max(1, Math.ceil(Math.sqrt(members.length)))
+    const cellW = 300
+    const cellH = 260
+    members.forEach((n, i) => {
+      const c = i % cols
+      const r = Math.floor(i / cols)
+      const idx = nodes.value.findIndex(node => node.id === n.id)
+      if (idx !== -1) {
+        nodes.value[idx] = {
+          ...nodes.value[idx],
+          position: { x: startX + c * (cellW + gap), y: startY + r * (cellH + gap) }
+        }
+      }
+    })
+  }
+  nodes.value = [...nodes.value]
+  saveToHistory()
+}
+
 // Viewport state | 视口状态
 export const canvasViewport = ref({ x: 100, y: 50, zoom: 0.8 })
 
@@ -52,7 +172,8 @@ const saveToHistory = (force = false) => {
 
   const state = {
     nodes: JSON.parse(JSON.stringify(nodes.value)),
-    edges: JSON.parse(JSON.stringify(edges.value))
+    edges: JSON.parse(JSON.stringify(edges.value)),
+    canvasGroups: JSON.parse(JSON.stringify(canvasGroups.value))
   }
 
   // Remove future history if we're not at the end | 如果不在末尾，删除未来历史
@@ -79,7 +200,8 @@ export const startBatchOperation = () => {
   isBatchOperation = true
   batchStartState = {
     nodes: JSON.parse(JSON.stringify(nodes.value)),
-    edges: JSON.parse(JSON.stringify(edges.value))
+    edges: JSON.parse(JSON.stringify(edges.value)),
+    canvasGroups: JSON.parse(JSON.stringify(canvasGroups.value))
   }
 }
 
@@ -96,7 +218,8 @@ export const endBatchOperation = () => {
   // Check if there are significant changes | 检查是否有显著变化
   const hasSignificantChanges = checkSignificantChanges(batchStartState, {
     nodes: nodes.value,
-    edges: edges.value
+    edges: edges.value,
+    canvasGroups: canvasGroups.value
   })
 
   if (hasSignificantChanges) {
@@ -159,6 +282,12 @@ const checkSignificantChanges = (oldState, newState) => {
   const newEdges = newState.edges || []
 
   if (oldEdges.length !== newEdges.length) {
+    return true
+  }
+
+  const og = JSON.stringify(oldState.canvasGroups || [])
+  const ng = JSON.stringify(newState.canvasGroups || [])
+  if (og !== ng) {
     return true
   }
 
@@ -292,9 +421,20 @@ export const updateNode = (id, data) => {
 }
 
 // Remove node | 删除节点
+const pruneCanvasGroupsForNodes = () => {
+  const next = canvasGroups.value
+    .map(g => ({
+      ...g,
+      memberIds: g.memberIds.filter(nid => nodes.value.some(n => n.id === nid))
+    }))
+    .filter(g => g.memberIds.length >= 2)
+  canvasGroups.value = next
+}
+
 export const removeNode = (id) => {
   nodes.value = nodes.value.filter(node => node.id !== id)
   edges.value = edges.value.filter(edge => edge.source !== id && edge.target !== id)
+  pruneCanvasGroupsForNodes()
   saveToHistory() // Save after removing node | 删除节点后保存
 }
 
@@ -442,6 +582,8 @@ export const removeEdge = (id) => {
 export const clearCanvas = () => {
   nodes.value = []
   edges.value = []
+  canvasGroups.value = []
+  groupIdSeq = 0
   nodeId = 0
 }
 
@@ -488,6 +630,19 @@ export const loadProject = (projectId) => {
     nodes.value = canvasData.nodes || []
     edges.value = canvasData.edges || []
     canvasViewport.value = canvasData.viewport || { x: 100, y: 50, zoom: 0.8 }
+
+    const rawGroups = canvasData.canvasGroups || []
+    canvasGroups.value = rawGroups
+      .map(g => ({
+        ...g,
+        memberIds: (g.memberIds || []).filter(id => nodes.value.some(n => n.id === id))
+      }))
+      .filter(g => g.memberIds && g.memberIds.length >= 2)
+
+    groupIdSeq = canvasGroups.value.reduce((m, g) => {
+      const match = String(g.id).match(/grp_(\d+)/)
+      return match ? Math.max(m, parseInt(match[1], 10) + 1) : m
+    }, 0)
     
     // Update node ID counter | 更新节点ID计数器
     const maxId = nodes.value.reduce((max, node) => {
@@ -506,7 +661,8 @@ export const loadProject = (projectId) => {
   // Initialize history with current state | 用当前状态初始化历史
   history.value = [{
     nodes: JSON.parse(JSON.stringify(nodes.value)),
-    edges: JSON.parse(JSON.stringify(edges.value))
+    edges: JSON.parse(JSON.stringify(edges.value)),
+    canvasGroups: JSON.parse(JSON.stringify(canvasGroups.value))
   }]
   historyIndex.value = 0
   
@@ -525,7 +681,8 @@ export const saveProject = () => {
   updateProjectCanvas(currentProjectId.value, {
     nodes: nodes.value,
     edges: edges.value,
-    viewport: canvasViewport.value
+    viewport: canvasViewport.value,
+    canvasGroups: canvasGroups.value
   })
 }
 
@@ -587,6 +744,7 @@ const restoreState = (state) => {
   isRestoring = true
   nodes.value = JSON.parse(JSON.stringify(state.nodes))
   edges.value = JSON.parse(JSON.stringify(state.edges))
+  canvasGroups.value = JSON.parse(JSON.stringify(state.canvasGroups || []))
   setTimeout(() => {
     isRestoring = false
   }, 100)
@@ -611,6 +769,6 @@ export const manualSaveHistory = () => {
 }
 
 // Watch for changes and auto-save (only save to project, not history) | 监听变化并自动保存（仅保存项目，不保存历史）
-watch([nodes, edges], () => {
+watch([nodes, edges, canvasGroups], () => {
   debouncedSave()
 }, { deep: true })
