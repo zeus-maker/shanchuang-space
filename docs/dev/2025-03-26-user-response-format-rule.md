@@ -8,9 +8,9 @@
 
 ## 修改点
 
-- `.cursor/rules/user-response-format.mdc` — `alwaysApply`，规定简体中文回复的推荐段落与质量要求。  
-- `.Claude.md`、`docs/dev/README.md` — 增加对上述规则与 `dev-issue-log` 的索引。
+- ~~`.cursor/rules/user-response-format.mdc`~~ / ~~`dev-issue-log.mdc`~~ 已合并为 **`.cursor/rules/dev-delivery-zh.mdc`**（`alwaysApply`：回复格式 + `docs/dev` 与 commit）。  
+- `.Claude.md`、`docs/dev/README.md` — 索引指向合并后的规则文件。
 
 ## 复盘
 
-- 规则与 `dev-issue-log` 并列：前者管「聊天怎么说」，后者管「仓库里记什么、怎么 commit」。
+- 单文件维护「聊天怎么说」与「仓库里记什么、怎么 commit」，减少重复与引用分叉。
