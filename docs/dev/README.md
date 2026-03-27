@@ -61,4 +61,4 @@ YYYY-MM-DD-<简短描述 slug>.md
 
 ## 与 Cursor 规则
 
-- **交付与留档（合并规则）：** `.cursor/rules/dev-delivery-zh.mdc` — 含：向用户回复的格式与质量（简体中文）、`docs/dev` 留档与 `git commit` 规范（修复类；功能迭代如需留档亦可按同结构书写）。
+- **交付与留档（合并规则）：** `.cursor/rules/dev-delivery-zh.mdc` — **原因 / 修改 / 验证 / 记录** 四块在聊天、`docs/dev` 与 `commit message` 之间对齐；另含质量要求、同一 commit 原则与豁免说明。
