@@ -171,6 +171,7 @@ import { usesVolcengineImageApi } from '../../config/models'
 import { getVolcengineApiKey } from '../../config/volcengineEnv'
 import { parseMentions } from '../../hooks/useNodeRef'
 import { aggregateBundleTexts, aggregateBundleRefImages } from '../../utils/bundleRefs'
+import { registerCanvasGroupNodeExecuteBridge } from '../../hooks/useCanvasGroupNodeExecuteBridge'
 
 // 使用 Pinia store 获取模型选项（根据渠道过滤）
 const modelStore = useModelStore()
@@ -700,6 +701,8 @@ const handleGenerate = async (mode = 'auto') => {
     window.$message?.error(err.message || '图片生成失败')
   }
 }
+
+registerCanvasGroupNodeExecuteBridge(() => props.id, () => handleGenerate('auto'))
 
 // Handle duplicate | 处理复制
 const handleDuplicate = () => {

@@ -140,6 +140,7 @@
  * For text generation tasks like story segmentation
  */
 import { ref, watch, computed, nextTick, onMounted } from 'vue'
+import { registerCanvasGroupNodeExecuteBridge } from '../../hooks/useCanvasGroupNodeExecuteBridge'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NSpin, NSelect } from 'naive-ui'
 import { TrashOutline, CopyOutline, ChatbubbleOutline, SparklesOutline, ListOutline, ImageOutline, VideocamOutline, DocumentTextOutline } from '@vicons/ionicons5'
@@ -871,6 +872,8 @@ const handleGenerate = async () => {
     isGenerating.value = false
   }
 }
+
+registerCanvasGroupNodeExecuteBridge(() => props.id, () => handleGenerate())
 
 // Watch for auto-execute flag | 监听自动执行标志
 watch(

@@ -23,3 +23,9 @@ export {
 
 // Workflow Orchestrator Hook | 工作流编排 Hook
 export { useWorkflowOrchestrator } from './useWorkflowOrchestrator'
+
+// 整组执行桥接 | Group sequential execute bridge
+export {
+  CANVAS_GROUP_NODE_EXECUTE_EVENT,
+  registerCanvasGroupNodeExecuteBridge
+} from './useCanvasGroupNodeExecuteBridge'

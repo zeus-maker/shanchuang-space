@@ -144,6 +144,7 @@
  * Configuration panel for video generation with API integration
  */
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { registerCanvasGroupNodeExecuteBridge } from '../../hooks/useCanvasGroupNodeExecuteBridge'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NDropdown, NSpin } from 'naive-ui'
 import { ChevronForwardOutline, ChevronDownOutline, TrashOutline, VideocamOutline, CopyOutline, CreateOutline } from '@vicons/ionicons5'
@@ -469,6 +470,8 @@ const handleGenerate = async () => {
     isGenerating.value = false
   }
 }
+
+registerCanvasGroupNodeExecuteBridge(() => props.id, () => handleGenerate())
 
 // Start editing label | 开始编辑 label
 const startEditLabel = () => {

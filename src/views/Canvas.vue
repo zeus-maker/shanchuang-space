@@ -61,27 +61,39 @@
         :elevate-nodes-on-select="true"
         @connect="onConnect"
         @node-click="onNodeClick"
+        @node-drag-start="onNodeDragStart"
         @pane-click="onPaneClick"
         @pane-context-menu="onPaneContextMenu"
         @viewport-change-end="handleViewportChange"
         @edges-change="onEdgesChange"
         class="canvas-flow"
       >
-        <!-- zoom-pane 在节点之后绘制，故打组底框用 z-index 负值 + 不响应点击，节点保持可拖 | Groups under nodes -->
+        <!-- zoom-pane 在节点之后；底色不接收指针，节点始终在上层可拖出框；透明描边层负责框内空白选组/拖框 | Fill under nodes, hit layer below .vue-flow__nodes -->
         <template #zoom-pane>
           <template v-for="g in canvasGroups" :key="g.id">
             <div
-              class="absolute rounded-xl border-2 border-dashed transition-shadow pointer-events-none"
-              :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
-              :style="groupFrameStyle(g)"
+              data-group-chrome="1"
+              data-group-frame-fill="1"
+              class="absolute rounded-xl transition-shadow select-none pointer-events-none"
+              :style="groupFrameFillStyle(g)"
+              aria-hidden="true"
             />
             <div
               data-group-chrome="1"
-              class="absolute flex items-center justify-between gap-2 px-2 rounded-md bg-[var(--bg-secondary)]/95 border border-[var(--border-color)] shadow-sm text-[var(--text-primary)] hover:border-[var(--accent-color)]/50"
+              data-group-frame="1"
+              class="absolute rounded-xl border-2 border-dashed transition-shadow pointer-events-auto cursor-grab active:cursor-grabbing select-none touch-none"
+              :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
+              :style="groupFrameHitStyle(g)"
+              title="框内空白：点击选中分组，拖动可同时平移框与组内节点"
+              @pointerdown="onGroupChromePointerDown(g, $event)"
+            />
+            <div
+              data-group-chrome="1"
+              class="absolute flex items-center justify-between gap-2 px-2 rounded-md bg-[var(--bg-secondary)]/95 border border-[var(--border-color)] shadow-sm text-[var(--text-primary)] hover:border-[var(--accent-color)]/50 cursor-grab active:cursor-grabbing select-none touch-none"
               :class="selectedGroupId === g.id ? 'ring-1 ring-[var(--accent-color)]/40' : ''"
               :style="groupStripStyle(g)"
-              @pointerdown.stop
-              @click.stop="selectGroup(g.id)"
+              title="点击选中分组；拖动可同时平移打组框与组内节点"
+              @pointerdown="onGroupChromePointerDown(g, $event)"
             >
               <span class="text-xs font-medium truncate">分组 · {{ g.memberIds.length }} 节点</span>
               <span class="text-[10px] text-[var(--text-tertiary)] shrink-0">{{ selectedGroupId === g.id ? '已选' : '点我选分组' }}</span>
@@ -94,9 +106,23 @@
               @pointerdown.stop
               @click.stop
             >
-              <n-dropdown trigger="click" :options="groupFillDropdownOptions" @select="onGroupFillSelect">
-                <n-button size="tiny" quaternary>底色</n-button>
-              </n-dropdown>
+              <div class="flex items-center gap-0.5 shrink-0 pr-1 border-r border-[var(--border-color)]/60 mr-0.5" title="底色">
+                <button
+                  v-for="sw in groupFillSwatches"
+                  :key="sw.key"
+                  type="button"
+                  class="w-5 h-5 rounded-full shrink-0 flex items-center justify-center border border-[var(--border-color)] hover:ring-1 hover:ring-[var(--accent-color)]/40 transition-shadow"
+                  :class="selectedGroupFillKey === sw.key ? 'ring-2 ring-[var(--accent-color)] ring-offset-1 ring-offset-[var(--bg-secondary)]' : ''"
+                  @click="pickGroupFill(sw.key)"
+                >
+                  <span
+                    v-if="sw.hex"
+                    class="block w-3.5 h-3.5 rounded-full border border-black/10 dark:border-white/15"
+                    :style="{ backgroundColor: sw.hex }"
+                  />
+                  <span v-else class="block w-3.5 h-3.5 rounded-full group-fill-swatch-none border border-dashed border-[var(--border-color)]" />
+                </button>
+              </div>
               <n-dropdown trigger="click" :options="groupLayoutDropdownOptions" @select="onGroupLayoutSelect">
                 <n-button size="tiny" quaternary>排列</n-button>
               </n-dropdown>
@@ -342,7 +368,7 @@
 
     <!-- 整组执行说明 | Group execute info -->
     <n-modal v-model:show="showGroupExecuteModal" preset="card" title="整组执行" style="width: 480px; max-width: 92vw;">
-      <p class="text-sm text-[var(--text-secondary)] mb-2">按连线依赖排序后的执行顺序（仅供参考）。自动串联各节点生成接口后续可接入；当前请按顺序在节点上手动点击生成。</p>
+      <p class="text-sm text-[var(--text-secondary)] mb-2">将按下方顺序依次触发组内文生图、视频、LLM 配置节点的生成（与连线依赖拓扑一致）。确认后开始执行。</p>
       <n-input v-model:value="groupExecutePromptNote" type="textarea" placeholder="可选：整组提示说明（将记入本次操作，暂不自动注入各节点）" :rows="3" class="mb-3" />
       <ol class="text-sm list-decimal pl-5 space-y-1 max-h-48 overflow-y-auto">
         <li v-for="nid in groupExecuteOrder" :key="nid">
@@ -350,7 +376,8 @@
         </li>
       </ol>
       <template #footer>
-        <n-button @click="showGroupExecuteModal = false">关闭</n-button>
+        <n-button :disabled="isGroupExecuting" @click="showGroupExecuteModal = false">取消</n-button>
+        <n-button type="primary" :loading="isGroupExecuting" :disabled="isGroupExecuting" @click="confirmGroupExecute">确认执行</n-button>
       </template>
     </n-modal>
 
@@ -397,9 +424,9 @@ import {
   AppsOutline,
   ChatbubbleOutline
 } from '@vicons/ionicons5'
-import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds } from '../stores/canvas'
+import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds, applyCanvasGroupFrameDelta } from '../stores/canvas'
 import { loadAllModels } from '../stores/models'
-import { useChat, useWorkflowOrchestrator } from '../hooks'
+import { useChat, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
 import { useModelStore } from '../stores/pinia'
 import { projects, initProjectsStore, updateProject, renameProject, currentProject, updateProjectCanvas } from '../stores/projects'
 
@@ -475,7 +502,7 @@ const router = useRouter()
 const route = useRoute()
 
 // Vue Flow instance | Vue Flow 实例
-const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals } = useVueFlow()
+const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals, screenToFlowCoordinate } = useVueFlow()
 
 /** Apple 平台启用触控板双指滑动平移（pan-on-scroll）；Windows 等仍用滚轮缩放（zoom-on-scroll）| Trackpad pan on Mac */
 const canvasWheelPan = ref(false)
@@ -593,6 +620,9 @@ const selectedGroupId = ref(null)
 const showGroupExecuteModal = ref(false)
 const groupExecutePromptNote = ref('')
 const groupExecuteOrder = ref([])
+const isGroupExecuting = ref(false)
+const GROUP_EXECUTE_TIMEOUT_MS = 600_000
+const GROUP_EXECUTABLE_TYPES = ['imageConfig', 'videoConfig', 'llmConfig']
 const showToolboxNameModal = ref(false)
 const toolboxNameInput = ref('')
 const TOOLBOX_STORAGE_KEY = 'huobao-canvas-toolbox'
@@ -607,15 +637,21 @@ const GROUP_FILL_BG = {
   c6: 'rgba(20, 184, 166, 0.14)'
 }
 
-const groupFillDropdownOptions = [
-  { label: '不使用', key: 'none' },
-  { label: '浅蓝', key: 'c1' },
-  { label: '浅紫', key: 'c2' },
-  { label: '浅绿', key: 'c3' },
-  { label: '浅琥珀', key: 'c4' },
-  { label: '浅粉', key: 'c5' },
-  { label: '浅青', key: 'c6' }
+const groupFillSwatches = [
+  { key: 'none' },
+  { key: 'c1', hex: '#3b82f6' },
+  { key: 'c2', hex: '#a855f7' },
+  { key: 'c3', hex: '#22c55e' },
+  { key: 'c4', hex: '#f59e0b' },
+  { key: 'c5', hex: '#ec4899' },
+  { key: 'c6', hex: '#14b8a6' }
 ]
+
+const selectedGroupFillKey = computed(() => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  const k = g?.fillKey
+  return k && GROUP_FILL_BG[k] !== undefined ? k : 'c1'
+})
 
 const groupLayoutDropdownOptions = [
   { label: '宫格排列', key: 'grid' },
@@ -628,41 +664,72 @@ const STRIP_H = 28
 const GAP_ABOVE_FRAME = 6
 const GAP_TOOLBAR_STRIP = 6
 
-const groupFrameStyle = (g) => {
-  const { x, y, width, height } = computeGroupBounds(g.memberIds, nodes.value)
+/** 打组固定矩形（持久化 frame）；缺省时回退推算（兼容旧数据）| Fixed group frame rect */
+const groupFrameRect = (g) => {
+  const f = g.frame
+  if (
+    f &&
+    typeof f.x === 'number' &&
+    typeof f.y === 'number' &&
+    typeof f.width === 'number' &&
+    f.width > 0 &&
+    typeof f.height === 'number' &&
+    f.height > 0
+  ) {
+    return { x: f.x, y: f.y, width: f.width, height: f.height }
+  }
+  return computeGroupBounds(g.memberIds, nodes.value)
+}
+
+/** 打组底色：不接收指针，避免挡在节点上方影响拖拽 | Fill only, pointer-events none */
+const groupFrameFillStyle = (g) => {
+  const { x, y, width, height } = groupFrameRect(g)
   return {
     left: `${x}px`,
     top: `${y}px`,
     width: `${width}px`,
     height: `${height}px`,
     background: groupFillBackground(g.fillKey),
-    zIndex: -1
+    zIndex: 1
   }
 }
 
-/** 打组顶栏：贴在框上沿之上，用于选中分组（底框不响应事件）| Strip above frame */
+/** 打组描边与框内空白命中：z 低于 .vue-flow__nodes，节点在上可拖出框 | Border + hit below nodes layer */
+const groupFrameHitStyle = (g) => {
+  const { x, y, width, height } = groupFrameRect(g)
+  return {
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+    background: 'transparent',
+    zIndex: 2
+  }
+}
+
+/** 打组顶栏：贴在框上沿之上；点击选中，拖动平移整个固定框 | Strip: select / drag frame */
 const groupStripStyle = (g) => {
-  const b = computeGroupBounds(g.memberIds, nodes.value)
+  const b = groupFrameRect(g)
   return {
     left: `${b.x}px`,
     top: `${b.y - GAP_ABOVE_FRAME}px`,
     width: `${b.width}px`,
     height: `${STRIP_H}px`,
     transform: 'translateY(-100%)',
-    zIndex: 20,
+    zIndex: 250,
     pointerEvents: 'auto'
   }
 }
 
 /** 工具栏在顶栏之上，避免压在半透明框内挡操作 | Toolbar above strip */
 const groupToolbarStyle = (g) => {
-  const b = computeGroupBounds(g.memberIds, nodes.value)
+  const b = groupFrameRect(g)
   const anchorY = b.y - GAP_ABOVE_FRAME - STRIP_H - GAP_TOOLBAR_STRIP
   return {
     left: `${b.x}px`,
     top: `${anchorY}px`,
     transform: 'translateY(-100%)',
-    zIndex: 25,
+    zIndex: 260,
     maxWidth: `${Math.min(Math.max(b.width, 220), 560)}px`,
     pointerEvents: 'auto'
   }
@@ -707,10 +774,122 @@ const selectGroup = (id) => {
   nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
 }
 
-const onGroupFillSelect = (key) => {
+/** 顶栏或底框空白拖拽移动打组（流坐标增量，松手后 manualSaveHistory）| Drag via strip or frame */
+let groupChromeDrag = null
+
+const detachGroupChromeDragListeners = () => {
+  window.removeEventListener('pointermove', onGroupChromePointerMove)
+  window.removeEventListener('pointerup', endGroupChromeDrag, true)
+  window.removeEventListener('pointercancel', endGroupChromeDrag, true)
+}
+
+const endGroupChromeDrag = () => {
+  if (!groupChromeDrag) return
+  const { groupId, moved } = groupChromeDrag
+  groupChromeDrag = null
+  detachGroupChromeDragListeners()
+  if (moved) {
+    manualSaveHistory()
+  } else {
+    selectGroup(groupId)
+  }
+}
+
+/** 路由离开等：只收尾监听与历史，不触发选中 | Unmount cleanup */
+const abortGroupChromeDrag = () => {
+  if (!groupChromeDrag) {
+    detachGroupChromeDragListeners()
+    return
+  }
+  const { moved } = groupChromeDrag
+  groupChromeDrag = null
+  detachGroupChromeDragListeners()
+  if (moved) manualSaveHistory()
+}
+
+const onGroupChromePointerMove = (e) => {
+  if (!groupChromeDrag) return
+  const p = screenToFlowCoordinate({ x: e.clientX, y: e.clientY })
+  const dx = p.x - groupChromeDrag.lastX
+  const dy = p.y - groupChromeDrag.lastY
+  groupChromeDrag.lastX = p.x
+  groupChromeDrag.lastY = p.y
+  if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return
+  groupChromeDrag.moved = true
+  applyCanvasGroupFrameDelta(groupChromeDrag.groupId, dx, dy)
+  const grp = canvasGroups.value.find((x) => x.id === groupChromeDrag.groupId)
+  if (grp?.memberIds?.length) {
+    updateNodeInternals(grp.memberIds)
+  }
+}
+
+const onGroupChromePointerDown = (g, e) => {
+  if (e.button !== 0) return
+  e.stopPropagation()
+  if (!g.frame) return
+  const p = screenToFlowCoordinate({ x: e.clientX, y: e.clientY })
+  groupChromeDrag = {
+    groupId: g.id,
+    lastX: p.x,
+    lastY: p.y,
+    moved: false
+  }
+  window.addEventListener('pointermove', onGroupChromePointerMove)
+  window.addEventListener('pointerup', endGroupChromeDrag, true)
+  window.addEventListener('pointercancel', endGroupChromeDrag, true)
+}
+
+const pickGroupFill = (key) => {
   if (!selectedGroupId.value) return
   const k = typeof key === 'object' && key != null && 'key' in key ? key.key : key
   updateCanvasGroup(selectedGroupId.value, { fillKey: k })
+}
+
+function requestGroupNodeExecute (nodeId) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error('节点执行超时'))
+    }, GROUP_EXECUTE_TIMEOUT_MS)
+    const wrap = (fn) => (val) => {
+      clearTimeout(t)
+      fn(val)
+    }
+    window.dispatchEvent(new CustomEvent(CANVAS_GROUP_NODE_EXECUTE_EVENT, {
+      detail: {
+        nodeId,
+        resolve: wrap(resolve),
+        reject: wrap(reject)
+      }
+    }))
+  })
+}
+
+const confirmGroupExecute = async () => {
+  if (!isApiConfigured.value) {
+    window.$message?.warning('请先配置 API Key')
+    return
+  }
+  const order = groupExecuteOrder.value
+  const executable = order.filter((id) => {
+    const n = nodes.value.find(x => x.id === id)
+    return n && GROUP_EXECUTABLE_TYPES.includes(n.type)
+  })
+  if (executable.length === 0) {
+    window.$message?.warning('当前顺序中没有可自动执行的配置节点（文生图 / 视频 / LLM）')
+    return
+  }
+  isGroupExecuting.value = true
+  try {
+    for (const nodeId of executable) {
+      await requestGroupNodeExecute(nodeId)
+    }
+    window.$message?.success('整组执行已完成')
+    showGroupExecuteModal.value = false
+  } catch (e) {
+    window.$message?.error(e?.message || '整组执行中断')
+  } finally {
+    isGroupExecuting.value = false
+  }
 }
 
 const onGroupLayoutSelect = (key) => {
@@ -755,6 +934,7 @@ const confirmToolboxSave = () => {
       name: toolboxNameInput.value.trim(),
       memberIds: [...g.memberIds],
       fillKey: g.fillKey,
+      frame: g.frame ? { ...g.frame } : undefined,
       savedAt: Date.now()
     })
     localStorage.setItem(TOOLBOX_STORAGE_KEY, JSON.stringify(raw))
@@ -816,7 +996,7 @@ const createCanvasGroupFromSelection = () => {
   if (!gid) return
   nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
   selectedGroupId.value = gid
-  window.$message?.success('已打组：点击半透明区域可使用工具栏')
+  window.$message?.success('已打组：框大小已固定；拖标题条可连带移动框与组内节点')
 }
 
 
@@ -1024,6 +1204,13 @@ const onConnect = (params) => {
 }
 const onNodeClick = () => {
   selectedGroupId.value = null
+}
+
+/** 拖拽开始时把节点提到最前，保证打组框内也能顺畅拖出、不被其它层干扰 | Bring node to front while dragging */
+const onNodeDragStart = ({ node }) => {
+  if (!node?.id) return
+  const maxZ = Math.max(0, ...nodes.value.map(n => Number(n.zIndex) || 0))
+  updateNode(node.id, { zIndex: maxZ + 1 })
 }
 
 // 仅在平移/缩放结束后写入 store，避免拖拽过程中每帧触发响应式与防抖保存导致卡顿
@@ -1282,6 +1469,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
   closePaneContextMenu()
+  abortGroupChromeDrag()
   // Save project before leaving | 离开前保存项目
   saveProject()
 })
@@ -1302,13 +1490,25 @@ onUnmounted(() => {
   touch-action: none;
 }
 
-/* 打组底框在 zoom-pane 且 z-index 为负；保证节点与边叠在底框之上 | Nodes above group tint */
+/* 节点层高于打组底色/描边命中层（z 1–2），低于顶栏工具栏（250+），便于框内拖出节点 | Nodes above group fill & hit, below chrome */
 .canvas-flow :deep(.vue-flow__nodes) {
   position: relative;
-  z-index: 1;
+  z-index: 200;
 }
 .canvas-flow :deep(.vue-flow__edges) {
   position: relative;
   z-index: 0;
+}
+
+/* 透明底色色块：棋盘格示意 | Transparent fill swatch */
+.group-fill-swatch-none {
+  background-color: var(--bg-tertiary);
+  background-image:
+    linear-gradient(45deg, rgba(128, 128, 128, 0.22) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(128, 128, 128, 0.22) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(128, 128, 128, 0.22) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(128, 128, 128, 0.22) 75%);
+  background-size: 5px 5px;
+  background-position: 0 0, 0 2.5px, 2.5px -2.5px, -2.5px 0;
 }
 </style>

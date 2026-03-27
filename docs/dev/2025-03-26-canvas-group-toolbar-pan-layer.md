@@ -26,3 +26,8 @@
 
 - 若个别节点类型在首帧尚未写入 `dimensions`，框仍可能短暂不准；可依赖后续 `nodes-change` 触发的 bounds 重算，或针对该类型补充估算。
 - Windows 无触控板时仅靠滚轮缩放 + 底部按钮缩放；若需在 Windows 触控板上双指平移，可把 `canvasWheelPan` 判定放宽（需注意与滚轮缩放的取舍）。
+
+## 补记：固定打组框（`frame`）
+
+- 打组矩形以 **`frame`** 持久化，**不**再随成员节点移动而重算；**拖标题条**时 `applyCanvasGroupFrameDelta` 同时改 **`frame` 与组内节点 `position`**，松手 `manualSaveHistory`；拖拽中调用 `updateNodeInternals(memberIds)` 刷新连线。
+- `layoutGroupMembers` 以 `frame` 左上角加内边距为锚点排列节点。

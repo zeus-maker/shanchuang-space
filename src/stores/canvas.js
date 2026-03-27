@@ -17,7 +17,7 @@ export const currentProjectId = ref(null)
 export const nodes = ref([])
 export const edges = ref([])
 
-/** 画布打组（非节点）：仅存成员 id 与底色键，框范围由成员位置实时推算 | Visual groups */
+/** 画布打组（非节点）：成员 id + 持久化 frame（固定矩形，不随节点移动而变）| Visual groups */
 export const canvasGroups = ref([])
 
 let groupIdSeq = 0
@@ -85,17 +85,80 @@ export const computeGroupBounds = (memberIds, allNodes) => {
   }
 }
 
+/** 节点矩形与打组 frame 是否相交（含半边在框内）| AABB intersection */
+export const nodeIntersectsGroupFrame = (node, frame) => {
+  if (!node || !frame || typeof frame.x !== 'number' || typeof frame.y !== 'number') return false
+  if (typeof frame.width !== 'number' || frame.width <= 0 || typeof frame.height !== 'number' || frame.height <= 0) {
+    return false
+  }
+  const [w, h] = getNodeBodySize(node)
+  const nx = node.position?.x ?? 0
+  const ny = node.position?.y ?? 0
+  const nl = nx
+  const nt = ny
+  const nr = nx + w
+  const nb = ny + h
+  const fl = frame.x
+  const ft = frame.y
+  const fr = frame.x + frame.width
+  const fb = frame.y + frame.height
+  return nr > fl && nl < fr && nb > ft && nt < fb
+}
+
 export const addCanvasGroup = (memberIds) => {
   const ids = [...new Set(memberIds)].filter(id => nodes.value.some(n => n.id === id))
   if (ids.length < 2) return null
+  const frame = computeGroupBounds(ids, nodes.value)
   const g = {
     id: nextGroupId(),
     memberIds: ids,
-    fillKey: 'c1'
+    fillKey: 'c1',
+    frame: { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
   }
   canvasGroups.value = [...canvasGroups.value, g]
   saveToHistory()
   return g.id
+}
+
+/**
+ * 拖拽平移打组框；仅平移「与当前 frame 相交」的成员；若全部在框外则只动框 | Frame pan + selective members
+ */
+export const applyCanvasGroupFrameDelta = (groupId, dx, dy) => {
+  if ((!dx && !dy) || typeof dx !== 'number' || typeof dy !== 'number') return
+  const g = canvasGroups.value.find((x) => x.id === groupId)
+  if (!g?.frame) return
+  const oldFrame = { ...g.frame }
+  const moveIds = new Set()
+  for (const id of g.memberIds || []) {
+    const n = nodes.value.find((x) => x.id === id)
+    if (n && nodeIntersectsGroupFrame(n, oldFrame)) {
+      moveIds.add(id)
+    }
+  }
+
+  canvasGroups.value = canvasGroups.value.map((gr) => {
+    if (gr.id !== groupId || !gr.frame) return gr
+    return {
+      ...gr,
+      frame: {
+        ...gr.frame,
+        x: gr.frame.x + dx,
+        y: gr.frame.y + dy
+      }
+    }
+  })
+
+  if (moveIds.size === 0) return
+  nodes.value = nodes.value.map((n) => {
+    if (!moveIds.has(n.id)) return n
+    return {
+      ...n,
+      position: {
+        x: (n.position?.x ?? 0) + dx,
+        y: (n.position?.y ?? 0) + dy
+      }
+    }
+  })
 }
 
 export const removeCanvasGroup = (id) => {
@@ -110,16 +173,18 @@ export const updateCanvasGroup = (id, partial) => {
   saveToHistory()
 }
 
-/** 宫格 / 水平排列成员节点 | Layout member nodes inside group */
+/** 宫格 / 水平排列成员节点（锚定固定 frame 内边距，不改动框大小）| Layout inside fixed frame */
 export const layoutGroupMembers = (groupId, mode) => {
   const g = canvasGroups.value.find(x => x.id === groupId)
   if (!g) return
   const members = nodes.value.filter(n => g.memberIds.includes(n.id))
   if (members.length === 0) return
-  const bounds = computeGroupBounds(g.memberIds, nodes.value)
+  const fr = g.frame && typeof g.frame.x === 'number'
+    ? g.frame
+    : computeGroupBounds(g.memberIds, nodes.value)
   const gap = 32
-  const startX = bounds.x + GROUP_FRAME_PAD
-  const startY = bounds.y + GROUP_FRAME_PAD
+  const startX = fr.x + GROUP_FRAME_PAD
+  const startY = fr.y + GROUP_FRAME_PAD
   if (mode === 'horizontal') {
     let x = startX
     const midY = startY
@@ -658,6 +723,15 @@ export const loadProject = (projectId) => {
         memberIds: (g.memberIds || []).filter(id => nodes.value.some(n => n.id === id))
       }))
       .filter(g => g.memberIds && g.memberIds.length >= 2)
+      .map((g) => {
+        const f = g.frame
+        const ok = f && typeof f.x === 'number' && typeof f.y === 'number' &&
+          typeof f.width === 'number' && f.width > 0 &&
+          typeof f.height === 'number' && f.height > 0
+        if (ok) return { ...g, frame: { x: f.x, y: f.y, width: f.width, height: f.height } }
+        const b = computeGroupBounds(g.memberIds, nodes.value)
+        return { ...g, frame: { x: b.x, y: b.y, width: b.width, height: b.height } }
+      })
 
     groupIdSeq = canvasGroups.value.reduce((m, g) => {
       const match = String(g.id).match(/grp_(\d+)/)
