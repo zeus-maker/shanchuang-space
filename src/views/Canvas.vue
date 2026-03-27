@@ -67,36 +67,37 @@
         @edges-change="onEdgesChange"
         class="canvas-flow"
       >
+        <!-- 必须与节点同层：Vue Flow 默认插槽在 transformationpane 之外，流坐标会错位 | Groups in zoom-pane -->
+        <template #zoom-pane>
+          <div
+            v-for="g in canvasGroups"
+            :key="g.id"
+            class="absolute rounded-xl pointer-events-auto border-2 border-dashed transition-shadow"
+            :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
+            :style="groupFrameStyle(g)"
+            @pointerdown.stop
+            @click.stop="selectGroup(g.id)"
+          />
+          <div
+            v-if="selectedGroupId && groupToolbarPos"
+            class="absolute z-[2] flex flex-wrap items-center gap-0.5 p-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg max-w-[min(100vw,520px)]"
+            :style="{ left: `${groupToolbarPos.x}px`, top: `${groupToolbarPos.y}px` }"
+            @pointerdown.stop
+            @click.stop
+          >
+            <n-dropdown trigger="click" :options="groupFillDropdownOptions" @select="onGroupFillSelect">
+              <n-button size="tiny" quaternary>底色</n-button>
+            </n-dropdown>
+            <n-dropdown trigger="click" :options="groupLayoutDropdownOptions" @select="onGroupLayoutSelect">
+              <n-button size="tiny" quaternary>排列</n-button>
+            </n-dropdown>
+            <n-button size="tiny" quaternary @click="openGroupExecuteModal">整组执行</n-button>
+            <n-button size="tiny" quaternary @click="showToolboxNameModal = true">添加到工具箱</n-button>
+            <n-button size="tiny" quaternary @click="ungroupSelected">解组</n-button>
+            <n-button size="tiny" type="primary" @click="downloadSelectedGroup">批量下载</n-button>
+          </div>
+        </template>
         <Background v-if="showGrid" :gap="20" :size="1" />
-        <!-- 打组框（流坐标，随缩放平移）| Group frames in flow space -->
-        <div
-          v-for="g in canvasGroups"
-          :key="g.id"
-          class="absolute rounded-xl pointer-events-auto border-2 border-dashed transition-shadow"
-          :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
-          :style="groupFrameStyle(g)"
-          @pointerdown.stop
-          @click.stop="selectGroup(g.id)"
-        />
-        <!-- 选中分组的工具栏（流坐标）| Group toolbar -->
-        <div
-          v-if="selectedGroupId && groupToolbarPos"
-          class="absolute z-[2] flex flex-wrap items-center gap-0.5 p-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-lg max-w-[min(100vw,520px)]"
-          :style="{ left: `${groupToolbarPos.x}px`, top: `${groupToolbarPos.y}px` }"
-          @pointerdown.stop
-          @click.stop
-        >
-          <n-dropdown trigger="click" :options="groupFillDropdownOptions" @select="onGroupFillSelect">
-            <n-button size="tiny" quaternary>底色</n-button>
-          </n-dropdown>
-          <n-dropdown trigger="click" :options="groupLayoutDropdownOptions" @select="onGroupLayoutSelect">
-            <n-button size="tiny" quaternary>排列</n-button>
-          </n-dropdown>
-          <n-button size="tiny" quaternary @click="openGroupExecuteModal">整组执行</n-button>
-          <n-button size="tiny" quaternary @click="showToolboxNameModal = true">添加到工具箱</n-button>
-          <n-button size="tiny" quaternary @click="ungroupSelected">解组</n-button>
-          <n-button size="tiny" type="primary" @click="downloadSelectedGroup">批量下载</n-button>
-        </div>
         <MiniMap 
           v-if="!isMobile"
           position="bottom-right"
