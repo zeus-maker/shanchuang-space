@@ -509,13 +509,16 @@ const handlePreviewClick = () => {
   window.$message?.success('已连接示例剧本，可修改后点击执行')
 }
 
-// ── JSON parser: handles raw array / markdown code block ───────────────
+// ── JSON parser: handles raw array / markdown code block / DeepSeek <think> ───
 const parseScriptJSON = (text) => {
   try {
-    const t = text.trim()
+    // 先剥离 DeepSeek reasoning 的 <think>...</think> 块（内含大量 [ ] 会干扰正则）
+    const t = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
     if (t.startsWith('[')) return JSON.parse(t)
+    // 代码块 ```json ... ``` 或 ``` ... ```
     const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (fence) return JSON.parse(fence[1].trim())
+    // 裸数组：从第一个 [ 到最后一个 ]
     const arr = t.match(/\[[\s\S]*\]/)
     if (arr) return JSON.parse(arr[0])
     return null
