@@ -509,20 +509,51 @@ const handlePreviewClick = () => {
   window.$message?.success('已连接示例剧本，可修改后点击执行')
 }
 
-// ── JSON parser: handles raw array / markdown code block / DeepSeek <think> ───
+// ── JSON parser: handles raw array / wrapped object / code fence / DeepSeek <think> ───
 const parseScriptJSON = (text) => {
-  try {
-    // 先剥离 DeepSeek reasoning 的 <think>...</think> 块（内含大量 [ ] 会干扰正则）
-    const t = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
-    if (t.startsWith('[')) return JSON.parse(t)
-    // 代码块 ```json ... ``` 或 ``` ... ```
-    const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (fence) return JSON.parse(fence[1].trim())
-    // 裸数组：从第一个 [ 到最后一个 ]
-    const arr = t.match(/\[[\s\S]*\]/)
-    if (arr) return JSON.parse(arr[0])
+  /** 尝试 JSON.parse，兼容裸数组和 {scenes:[...]} 包装对象 */
+  const tryParse = (s) => {
+    try {
+      const r = JSON.parse(s.trim())
+      if (Array.isArray(r) && r.length) return r
+      if (r?.scenes && Array.isArray(r.scenes) && r.scenes.length) return r.scenes
+      return null
+    } catch { return null }
+  }
+
+  /** 用括号深度计数提取第一个完整 JSON 块（[ 或 {） */
+  const extractByBracket = (s, openCh, closeCh) => {
+    const start = s.indexOf(openCh)
+    if (start === -1) return null
+    let depth = 0
+    for (let i = start; i < s.length; i++) {
+      if (s[i] === openCh) depth++
+      else if (s[i] === closeCh) { depth--; if (depth === 0) return s.slice(start, i + 1) }
+    }
     return null
-  } catch { return null }
+  }
+
+  // 1. 剥离 DeepSeek <think>...</think> 推理块
+  let t = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+
+  // 2. 直接以 [ 或 { 开头
+  if (t.startsWith('[') || t.startsWith('{')) {
+    const r = tryParse(t); if (r) return r
+  }
+
+  // 3. 代码块 ```json ... ``` 或 ``` ... ```
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fence) { const r = tryParse(fence[1]); if (r) return r }
+
+  // 4. 括号计数提取 JSON 数组
+  const arr = extractByBracket(t, '[', ']')
+  if (arr) { const r = tryParse(arr); if (r) return r }
+
+  // 5. 括号计数提取 JSON 对象（兼容 {"scenes":[...]} 格式）
+  const obj = extractByBracket(t, '{', '}')
+  if (obj) { const r = tryParse(obj); if (r) return r }
+
+  return null
 }
 
 // ── Build user message (connected text + prompt) ───────────────────────
@@ -584,6 +615,7 @@ const handleGenerate = async () => {
     if (err.name === 'AbortError') {
       updateNode(props.id, { status: 'idle' })
     } else {
+      console.error('[ScriptNode] 生成失败:', err.name, err.message, '\nfullText前200字符:', fullText?.slice(0, 200))
       updateNode(props.id, { status: 'error' })
       window.$message?.error(err.message || '生成失败')
     }
