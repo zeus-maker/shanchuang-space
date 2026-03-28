@@ -554,12 +554,17 @@ const handleGenerate = async () => {
   let fullText = ''
 
   try {
+    // 从 modelStore 获取正确的 chat API 地址（含 origin + endpoint）
+    const chatUrl = modelStore.getChatEndpoint()
+    const parsedUrl = new URL(chatUrl)
+
     for await (const chunk of streamChatCompletions(
       { model: localModel.value, messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user',   content: msg }
         ] },
-      abortCtrl.signal
+      abortCtrl.signal,
+      { baseUrl: parsedUrl.origin, endpoint: parsedUrl.pathname }
     )) {
       fullText += chunk
       genCharsCount.value = fullText.length
