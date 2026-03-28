@@ -258,7 +258,7 @@ export const VIDEO_DURATION_OPTIONS = [
 ]
 
 // Default values | 默认值
-export const DEFAULT_IMAGE_MODEL = 'nano-banana-pro'
+export const DEFAULT_IMAGE_MODEL = 'doubao-seedream-4-5-251128'
 export const DEFAULT_VIDEO_MODEL = 'doubao-seedance-1-5-pro-251215'
 export const DEFAULT_CHAT_MODEL = 'deepseek-chat'
 export const DEFAULT_IMAGE_SIZE = '2048x2048'
