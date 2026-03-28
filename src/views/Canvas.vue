@@ -124,7 +124,83 @@
               <n-button size="tiny" quaternary @click="showToolboxNameModal = true">添加到工具箱</n-button>
               <n-button size="tiny" quaternary @click="ungroupSelected">解组</n-button>
               <n-button size="tiny" type="primary" @click="downloadSelectedGroup">批量下载</n-button>
+              <n-button v-if="selectedGroupHasImageConfigs" size="tiny" type="info" @click="handleOpenBatchVideo">
+                <template #icon><n-icon :size="12"><VideocamOutline /></n-icon></template>
+                批量生成视频
+              </n-button>
+              <n-button
+                v-if="selectedGroupVideosStitchable"
+                size="tiny"
+                type="success"
+                :loading="isStitchingVideos"
+                :disabled="isStitchingVideos"
+                @click="handleAutoStitchVideos"
+              >
+                自动剪辑
+              </n-button>
             </div>
+
+            <!-- 批量生成视频设置：贴在分镜打组框下方（与画布同坐标系，随缩放平移） -->
+            <Transition name="bv-panel">
+              <div
+                v-if="selectedGroupId === g.id && showBatchVideoPanel && selectedGroupHasImageConfigs"
+                data-group-chrome="1"
+                class="absolute bv-panel bv-panel--anchored"
+                :style="groupBatchVideoPanelStyle(g)"
+                @pointerdown.stop
+                @click.stop
+              >
+                <div class="bv-settings">
+                  <div class="bv-section">
+                    <span class="bv-section-title">比例</span>
+                    <div class="bv-option-row">
+                      <button v-for="r in bvRatioList" :key="r" type="button" class="bv-option-btn" :class="{ active: bvRatio === r }" @click="bvRatio = r">
+                        <span class="bv-ratio-icon" :class="`ratio-${r.replace(':', 'x')}`"></span>
+                        {{ r }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="bv-section">
+                    <span class="bv-section-title">生成音频</span>
+                    <div class="bv-option-row">
+                      <button type="button" class="bv-option-btn" :class="{ active: bvAudio }" @click="bvAudio = true">开启</button>
+                      <button type="button" class="bv-option-btn" :class="{ active: !bvAudio }" @click="bvAudio = false">关闭</button>
+                    </div>
+                  </div>
+                  <div class="bv-section">
+                    <span class="bv-section-title">时长</span>
+                    <div class="bv-option-row">
+                      <button v-for="d in bvDurList" :key="d.key" type="button" class="bv-option-btn" :class="{ active: bvDuration === d.key }" @click="bvDuration = d.key">{{ d.label }}</button>
+                    </div>
+                  </div>
+                  <div class="bv-section">
+                    <span class="bv-section-title">生成品质</span>
+                    <div class="bv-option-row">
+                      <button v-for="res in bvResolutionList" :key="res" type="button" class="bv-option-btn" :class="{ active: bvResolution === res }" @click="bvResolution = res">{{ res === '480p' ? '标准' : res === '720p' ? '高清' : '超清' }}</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="bv-bottom-bar">
+                  <button type="button" class="bv-close-btn" @click="handleCloseBatchVideo">✕</button>
+                  <n-dropdown :options="bvModelOptions" @select="onBvModelSelect" trigger="click">
+                    <button type="button" class="bv-model-btn">
+                      <n-icon :size="12"><VideocamOutline /></n-icon>
+                      {{ bvDisplayModel }}
+                      <n-icon :size="10"><ChevronDownOutline /></n-icon>
+                    </button>
+                  </n-dropdown>
+                  <span class="bv-summary">
+                    {{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }} · {{ bvDuration }}s ·
+                    <n-icon :size="11"><component :is="bvAudio ? VolumeHighOutline : VolumeMuteOutline" /></n-icon>
+                  </span>
+                  <span class="bv-scene-count">全部 {{ bvSceneCount }} 个分镜</span>
+                  <button type="button" class="bv-generate-btn" :disabled="isGeneratingVideos || !bvSceneCount" @click="handleBatchGenerateVideos">
+                    <n-spin v-if="isGeneratingVideos" :size="14" />
+                    <template v-else>⚡ {{ bvCreditCost }} 生成视频</template>
+                  </button>
+                </div>
+              </div>
+            </Transition>
           </template>
         </template>
         <Background v-if="showGrid" :gap="20" :size="1" />
@@ -387,6 +463,7 @@
         <n-button type="primary" :disabled="!toolboxNameInput.trim()" @click="confirmToolboxSave">保存</n-button>
       </template>
     </n-modal>
+
   </div>
 </template>
 
@@ -421,11 +498,14 @@ import {
   DownloadOutline,
   AppsOutline,
   ChatbubbleOutline,
-  DocumentTextOutline
+  DocumentTextOutline,
+  VolumeHighOutline,
+  VolumeMuteOutline
 } from '@vicons/ionicons5'
 import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds, applyCanvasGroupFrameDelta } from '../stores/canvas'
 import { loadAllModels } from '../stores/models'
-import { useChat, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
+import { useChat, useVideoGeneration, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
+import { VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../config/models'
 import { useModelStore } from '../stores/pinia'
 import { projects, initProjectsStore, updateProject, renameProject, currentProject, updateProjectCanvas } from '../stores/projects'
 
@@ -726,6 +806,20 @@ const groupToolbarStyle = (g) => {
   }
 }
 
+/** 批量视频设置面板：贴在打组框下沿下方（画布坐标，随视口缩放） */
+const GAP_BATCH_PANEL_BELOW = 8
+const groupBatchVideoPanelStyle = (g) => {
+  const b = groupFrameRect(g)
+  const w = Math.min(820, Math.max(b.width, 300))
+  return {
+    left: `${b.x}px`,
+    top: `${b.y + b.height + GAP_BATCH_PANEL_BELOW}px`,
+    width: `${w}px`,
+    zIndex: 270,
+    pointerEvents: 'auto'
+  }
+}
+
 function topoSortMembers (memberIds, edgesList) {
   const set = new Set(memberIds)
   const sub = edgesList.filter(e => set.has(e.source) && set.has(e.target))
@@ -934,7 +1028,7 @@ const handleGroupDeleteKey = (e) => {
   deleteSelectedGroup()
 }
 
-const downloadSelectedGroup = () => {
+const downloadSelectedGroup = async () => {
   const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
   if (!g) return
   const list = nodes.value.filter(n =>
@@ -944,8 +1038,309 @@ const downloadSelectedGroup = () => {
     window.$message?.info('组内没有可下载的图片/视频链接')
     return
   }
-  list.forEach(n => window.open(n.data.url, '_blank'))
-  window.$message?.success(`已打开 ${list.length} 个链接`)
+  if (list.length === 1) {
+    window.open(list[0].data.url, '_blank')
+    window.$message?.success('已打开下载链接')
+    return
+  }
+  window.$message?.info('正在将组内素材打包为一个 zip，体积大时请耐心等待…')
+  try {
+    const { zipGroupMediaNodes } = await import('../utils/groupZipDownload.js')
+    const { blob, fileName, embedded, linkOnly } = await zipGroupMediaNodes(list, g.label)
+    const a = document.createElement('a')
+    const href = URL.createObjectURL(blob)
+    a.href = href
+    a.download = fileName
+    a.click()
+    URL.revokeObjectURL(href)
+    let msg = embedded
+      ? `已下载压缩包（内含 ${embedded} 个文件）`
+      : '已下载压缩包'
+    if (linkOnly) {
+      msg += `；另有 ${linkOnly} 个因跨域限制仅保存了链接 txt，请手动打开原链接下载`
+    }
+    window.$message?.success(msg)
+  } catch (e) {
+    window.$message?.error('打包失败：' + (e?.message || e))
+  }
+}
+
+// ── Batch video generation (group toolbar) ───────────────────────────
+const { createVideoTaskOnly } = useVideoGeneration()
+
+const showBatchVideoPanel = ref(false)
+const isGeneratingVideos = ref(false)
+const isStitchingVideos = ref(false)
+
+watch(selectedGroupId, () => {
+  showBatchVideoPanel.value = false
+})
+const bvModel = ref(DEFAULT_VIDEO_MODEL)
+const bvRatio = ref('16:9')
+const bvResolution = ref('720p')
+const bvDuration = ref(5)
+const bvAudio = ref(true)
+
+const selectedGroupHasImageConfigs = computed(() => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return false
+  return g.memberIds.some(mid => {
+    const n = nodes.value.find(x => x.id === mid)
+    return n?.type === 'imageConfig'
+  })
+})
+
+const selectedGroupImageNodes = computed(() => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return []
+  return g.memberIds
+    .map(mid => nodes.value.find(n => n.id === mid))
+    .filter(n => n?.type === 'imageConfig')
+    .sort((a, b) => {
+      const rowA = Math.floor(a.position.y / 200)
+      const rowB = Math.floor(b.position.y / 200)
+      if (rowA !== rowB) return rowA - rowB
+      return a.position.x - b.position.x
+    })
+})
+
+const bvModelOptions = computed(() =>
+  VIDEO_MODELS
+    .filter(m => m.type === 'i2v' || m.type === 't2v+i2v')
+    .map(m => ({ label: m.label, key: m.key }))
+)
+const bvDisplayModel = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.label?.replace(/\(.*\)/, '').trim() || bvModel.value
+})
+const bvRatioList = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.ratios || ['16:9', '1:1', '9:16']
+})
+const bvResolutionList = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.resolutions || SEEDANCE_RESOLUTION_OPTIONS.map(r => r.key)
+})
+const bvDurList = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.durs || [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }]
+})
+const bvSceneCount = computed(() => selectedGroupImageNodes.value.length)
+
+/** 组内视频节点按分镜网格顺序（与批量生成布局一致） */
+const sortVideoNodesForStitch = (list) =>
+  [...list].sort((a, b) => {
+    const rowA = Math.floor(a.position.y / 200)
+    const rowB = Math.floor(b.position.y / 200)
+    if (rowA !== rowB) return rowA - rowB
+    return a.position.x - b.position.x
+  })
+
+/** 当前选中组内所有视频已生成完成，可批量下载 / 自动剪辑 */
+const selectedGroupVideosStitchable = computed(() => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return false
+  const vids = g.memberIds
+    .map(id => nodes.value.find(n => n.id === id))
+    .filter(n => n?.type === 'video')
+  if (!vids.length) return false
+  return vids.every(n => n.data?.url && !n.data?.loading && !n.data?.error)
+})
+const bvCreditCost = computed(() => {
+  let perVideo = 55
+  if (bvDuration.value >= 10) perVideo *= 2
+  if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
+  else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
+  if (bvAudio.value) perVideo = Math.ceil(perVideo * 1.2)
+  return bvSceneCount.value * perVideo
+})
+
+watch(bvModel, (key) => {
+  const m = VIDEO_MODELS.find(x => x.key === key)
+  if (m?.defaultParams) {
+    bvRatio.value = m.defaultParams.ratio || '16:9'
+    bvDuration.value = m.defaultParams.duration || 5
+  }
+  if (m?.defaultResolution) bvResolution.value = m.defaultResolution
+})
+
+const onBvModelSelect = (key) => { bvModel.value = key }
+const handleOpenBatchVideo = () => { showBatchVideoPanel.value = true }
+const handleCloseBatchVideo = () => { showBatchVideoPanel.value = false }
+
+const handleAutoStitchVideos = async () => {
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g || isStitchingVideos.value) return
+  const vids = sortVideoNodesForStitch(
+    g.memberIds.map(id => nodes.value.find(n => n.id === id)).filter(n => n?.type === 'video')
+  )
+  const urls = vids.map(n => n.data?.url).filter(Boolean)
+  if (!urls.length) {
+    window.$message?.warning('没有可拼接的视频链接')
+    return
+  }
+  isStitchingVideos.value = true
+  try {
+    window.$message?.info(
+      urls.length > 1
+        ? '首次自动剪辑需从 CDN 加载 FFmpeg，请稍候…'
+        : '正在准备成片下载…'
+    )
+    const { concatVideoUrlsToBlob } = await import('../utils/videoConcat')
+    const blob = await concatVideoUrlsToBlob(urls)
+    const a = document.createElement('a')
+    const href = URL.createObjectURL(blob)
+    a.href = href
+    a.download = `分镜成片_${Date.now()}.mp4`
+    a.click()
+    URL.revokeObjectURL(href)
+    window.$message?.success('成片已触发下载')
+  } catch (e) {
+    window.$message?.error(e?.message || '自动剪辑失败')
+  } finally {
+    isStitchingVideos.value = false
+  }
+}
+
+const findScriptScenesForGroup = (groupId) => {
+  const g = canvasGroups.value.find(x => x.id === groupId)
+  if (!g) return []
+  const proxyInGroup = g.memberIds.find(mid => {
+    const n = nodes.value.find(x => x.id === mid)
+    return n?.type === 'groupProxy'
+  })
+  if (!proxyInGroup) return []
+  const inEdge = edges.value.find(e => e.target === proxyInGroup)
+  if (!inEdge) return []
+  const srcProxy = nodes.value.find(n => n.id === inEdge.source && n.type === 'groupProxy')
+  if (!srcProxy) {
+    const scriptNode = nodes.value.find(n => n.id === inEdge.source && n.type === 'script')
+    return scriptNode?.data?.scenes || []
+  }
+  const scriptEdge = edges.value.find(e => e.target === srcProxy?.id || e.target === inEdge.source)
+  if (!scriptEdge) return []
+  const scriptNode = nodes.value.find(n => n.id === scriptEdge.source && n.type === 'script')
+  return scriptNode?.data?.scenes || []
+}
+
+const handleBatchGenerateVideos = async () => {
+  if (isGeneratingVideos.value || !bvSceneCount.value) return
+  isGeneratingVideos.value = true
+
+  try {
+    const storyboardGroupId = selectedGroupId.value
+    const storyboardNodes = selectedGroupImageNodes.value
+    if (!storyboardNodes.length) {
+      window.$message?.warning('组内没有分镜图节点')
+      isGeneratingVideos.value = false
+      return
+    }
+
+    const scenes = findScriptScenesForGroup(storyboardGroupId)
+
+    const sceneData = storyboardNodes.map((node, i) => {
+      const scene = scenes[i] || {}
+      const imageUrl = node.data?.generatedUrls?.[node.data?.mainImageIndex || 0]
+        || node.data?.generatedUrls?.[0]
+        || node.data?.selectedUrl
+        || null
+      return {
+        nodeId: node.id,
+        imageUrl,
+        prompt: scene.videoMotionPrompt || scene.description || '',
+        label: `分镜视频 #${scene.sceneNo || (i + 1)}`
+      }
+    })
+
+    const storyboardGroup = canvasGroups.value.find(g => g.id === storyboardGroupId)
+    const groupRight = storyboardGroup?.frame
+      ? storyboardGroup.frame.x + storyboardGroup.frame.width + 80
+      : 2200
+    const groupTop = storyboardGroup?.frame?.y || 0
+
+    const COLS = 5, NODE_W = 420, NODE_H = 320, GAP_X = 12, GAP_Y = 12
+    const videoNodeSpecs = sceneData.map((sd, i) => ({
+      type: 'video',
+      position: {
+        x: groupRight + (i % COLS) * (NODE_W + GAP_X),
+        y: groupTop + Math.floor(i / COLS) * (NODE_H + GAP_Y)
+      },
+      data: { url: '', loading: true, label: sd.label, model: bvModel.value }
+    }))
+
+    startBatchOperation()
+    const videoNodeIds = addNodes(videoNodeSpecs, false)
+    endBatchOperation()
+
+    await new Promise(r => setTimeout(r, 150))
+
+    let videoGroupId = null
+    if (videoNodeIds.length >= 2) {
+      videoGroupId = addCanvasGroup(videoNodeIds)
+      if (videoGroupId) updateCanvasGroup(videoGroupId, { label: '视频组 · 分镜图 · 脚本生成器' })
+    }
+
+    if (videoGroupId && storyboardGroup) {
+      const vg = canvasGroups.value.find(x => x.id === videoGroupId)
+      if (vg?.frame) {
+        const proxyId = addNode('groupProxy', {
+          x: vg.frame.x,
+          y: vg.frame.y + vg.frame.height / 2 - 6
+        }, {})
+        updateCanvasGroup(videoGroupId, { memberIds: [...(vg.memberIds || []), proxyId] })
+
+        const sbProxy = storyboardGroup.memberIds.find(mid => {
+          const n = nodes.value.find(x => x.id === mid && x.type === 'groupProxy')
+          return !!n
+        })
+        if (sbProxy) {
+          addEdge({
+            source: sbProxy,
+            target: proxyId,
+            sourceHandle: 'right',
+            targetHandle: 'left',
+            type: 'default'
+          })
+        }
+      }
+    }
+
+    showBatchVideoPanel.value = false
+    window.$message?.success(`正在生成 ${videoNodeIds.length} 个分镜视频…`)
+
+    videoNodeIds.forEach(async (videoNodeId, i) => {
+      const sd = sceneData[i]
+      try {
+        const params = {
+          model: bvModel.value,
+          ratio: bvRatio.value,
+          dur: bvDuration.value,
+          resolution: bvResolution.value,
+          generateAudio: bvAudio.value
+        }
+        if (sd.prompt) params.prompt = sd.prompt
+        if (sd.imageUrl) params.first_frame_image = sd.imageUrl
+        const nextScene = sceneData[i + 1]
+        if (nextScene?.imageUrl) params.last_frame_image = nextScene.imageUrl
+
+        const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
+
+        if (url) {
+          updateNode(videoNodeId, { url, loading: false, label: sd.label, model: bvModel.value, updatedAt: Date.now() })
+        } else if (newTaskId) {
+          updateNode(videoNodeId, { taskId: newTaskId, loading: true, label: sd.label, model: bvModel.value, updatedAt: Date.now() })
+        }
+      } catch (err) {
+        updateNode(videoNodeId, { loading: false, error: err.message || '生成失败', label: sd.label, updatedAt: Date.now() })
+      }
+    })
+
+    manualSaveHistory()
+  } catch (err) {
+    window.$message?.error('批量视频生成失败：' + err.message)
+  } finally {
+    isGeneratingVideos.value = false
+  }
 }
 
 const confirmToolboxSave = () => {
@@ -1549,4 +1944,77 @@ onUnmounted(() => {
   background-size: 5px 5px;
   background-position: 0 0, 0 2.5px, 2.5px -2.5px, -2.5px 0;
 }
+
+/* ─── Batch video panel（画布内锚定在打组框下方） ───────────────────────── */
+.bv-panel {
+  border-radius: 16px; overflow: hidden;
+  background: rgba(30,30,35,0.96); backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+}
+.bv-panel--anchored {
+  max-height: min(420px, 70vh);
+  display: flex;
+  flex-direction: column;
+}
+.bv-panel--anchored .bv-settings {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.bv-settings { padding: 20px 24px 12px; display: flex; flex-direction: column; gap: 16px; }
+.bv-section { display: flex; flex-direction: column; gap: 8px; }
+.bv-section-title { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.85); }
+.bv-option-row { display: flex; gap: 8px; }
+.bv-option-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 20px; border-radius: 8px; font-size: 13px;
+  color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.08); cursor: pointer;
+  transition: all 0.15s; min-width: 72px;
+}
+.bv-option-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.9); }
+.bv-option-btn.active { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.35); color: white; font-weight: 500; }
+.bv-ratio-icon { display: inline-block; border: 1.5px solid currentColor; border-radius: 2px; }
+.ratio-16x9 { width: 16px; height: 9px; }
+.ratio-1x1  { width: 12px; height: 12px; }
+.ratio-9x16 { width: 9px;  height: 16px; }
+.ratio-4x3  { width: 14px; height: 10px; }
+.ratio-3x4  { width: 10px; height: 14px; }
+.ratio-21x9 { width: 18px; height: 8px; }
+.bv-bottom-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(20,20,25,0.6);
+}
+.bv-close-btn {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 14px; color: rgba(255,255,255,0.5);
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer; transition: all 0.12s; flex-shrink: 0;
+}
+.bv-close-btn:hover { background: rgba(255,255,255,0.12); color: white; }
+.bv-model-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+  color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12); cursor: pointer;
+  white-space: nowrap; transition: all 0.12s;
+}
+.bv-model-btn:hover { background: rgba(255,255,255,0.14); }
+.bv-summary { display: flex; align-items: center; gap: 4px; font-size: 12px; color: rgba(255,255,255,0.5); white-space: nowrap; }
+.bv-scene-count { font-size: 12px; color: rgba(255,255,255,0.5); white-space: nowrap; margin-left: auto; }
+.bv-generate-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  color: white; background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none; cursor: pointer; white-space: nowrap;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.bv-generate-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.bv-generate-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; filter: none; }
+.bv-panel-enter-active { transition: all 0.25s ease-out; }
+.bv-panel-leave-active { transition: all 0.2s ease-in; }
+.bv-panel-enter-from { opacity: 0; transform: translateY(40px); }
+.bv-panel-leave-to { opacity: 0; transform: translateY(40px); }
 </style>
