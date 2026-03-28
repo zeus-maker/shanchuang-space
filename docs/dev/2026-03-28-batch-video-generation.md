@@ -108,4 +108,10 @@ sceneData[i] = {
 
 ## CSS 命名
 
-所有面板样式使用 `.bv-` 前缀（batch video），scoped 在 ScriptNode.vue 内。
+所有面板样式使用 `.bv-` 前缀（batch video），主要定义在 `Canvas.vue` 全局样式段。
+
+## Vite 与 @ffmpeg/ffmpeg（开发态 HMR）
+
+`@ffmpeg/ffmpeg` 内含 Web Worker，被 `optimizeDeps` 预打包后，worker 会错误指向 `node_modules/.vite/deps/worker.js` 等不存在路径。
+
+**处理**：在 `vite.config.js` 中设置 `optimizeDeps.exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']`。若仍报错，删除 `node_modules/.vite` 后重新执行 `npm run dev`。
