@@ -513,12 +513,26 @@ const handlePreviewClick = () => {
 const parseScriptJSON = (text) => {
   /** 尝试 JSON.parse，兼容裸数组和 {scenes:[...]} 包装对象 */
   const tryParse = (s) => {
-    try {
-      const r = JSON.parse(s.trim())
+    const extract = (r) => {
       if (Array.isArray(r) && r.length) return r
       if (r?.scenes && Array.isArray(r.scenes) && r.scenes.length) return r.scenes
       return null
-    } catch { return null }
+    }
+    const raw = s.trim()
+    // 第一次：直接解析
+    try { const r = JSON.parse(raw); const res = extract(r); if (res) return res } catch {}
+    // 第二次：修复 LLM 常见问题再解析
+    // - 去掉数组/对象末尾多余逗号
+    // - 把字符串值内的裸换行/回车/制表符转义（LLM 最常见的 JSON 输出问题）
+    try {
+      const repaired = raw
+        .replace(/,(\s*[}\]])/g, '$1')
+        .replace(/"((?:[^"\\]|\\.)*)"/gs, (_, inner) =>
+          '"' + inner.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"'
+        )
+      const r = JSON.parse(repaired); const res = extract(r); if (res) return res
+    } catch {}
+    return null
   }
 
   /** 用括号深度计数提取第一个完整 JSON 块（[ 或 {） */
@@ -533,7 +547,7 @@ const parseScriptJSON = (text) => {
     return null
   }
 
-  // 1. 剥离 DeepSeek <think>...</think> 推理块
+  // 1. 剥离 DeepSeek <think>...</think> 推理块（内含大量 [ ] 会干扰正则）
   let t = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 
   // 2. 直接以 [ 或 { 开头
@@ -624,7 +638,7 @@ const handleGenerate = async () => {
     if (err.name === 'AbortError') {
       updateNode(props.id, { status: 'idle' })
     } else {
-      console.error('[ScriptNode] 生成失败:', err.name, err.message, '\nfullText前200字符:', fullText?.slice(0, 200))
+      console.info('[ScriptNode] 生成失败:', err.name, err.message, '\nfullText前200字符:', fullText?.slice(0, 200))
       updateNode(props.id, { status: 'error', scenes: [] })
       window.$message?.error(err.message || '生成失败')
     }
