@@ -68,24 +68,18 @@
         @edges-change="onEdgesChange"
         class="canvas-flow"
       >
-        <!-- zoom-pane 在节点之后；底色不接收指针，节点始终在上层可拖出框；透明描边层负责框内空白选组/拖框 | Fill under nodes, hit layer below .vue-flow__nodes -->
+        <!-- zoom-pane 内仅渲染视觉层（全部 pointer-events:none），节点不被遮挡可自由拖出框外
+             空白处选组通过 @pane-click 坐标检测实现；框的拖动通过顶部 strip 触发 -->
         <template #zoom-pane>
           <template v-for="g in canvasGroups" :key="g.id">
-            <div
-              data-group-chrome="1"
-              data-group-frame-fill="1"
-              class="absolute rounded-xl transition-shadow select-none pointer-events-none"
-              :style="groupFrameFillStyle(g)"
-              aria-hidden="true"
-            />
+            <!-- 底色 + 边框：纯视觉，不拦截任何指针事件 -->
             <div
               data-group-chrome="1"
               data-group-frame="1"
-              class="absolute rounded-xl border-2 border-dashed transition-shadow pointer-events-auto cursor-grab active:cursor-grabbing select-none touch-none"
+              class="absolute rounded-xl border-2 border-dashed transition-shadow select-none pointer-events-none"
               :class="selectedGroupId === g.id ? 'border-[var(--accent-color)] shadow-md ring-1 ring-[var(--accent-color)]/30' : 'border-white/50 dark:border-white/25'"
-              :style="groupFrameHitStyle(g)"
-              title="框内空白：点击选中分组，拖动可同时平移框与组内节点"
-              @pointerdown="onGroupChromePointerDown(g, $event)"
+              :style="groupFrameStyle(g)"
+              aria-hidden="true"
             />
             <div
               data-group-chrome="1"
@@ -681,8 +675,8 @@ const groupFrameRect = (g) => {
   return computeGroupBounds(g.memberIds, nodes.value)
 }
 
-/** 打组底色：不接收指针，避免挡在节点上方影响拖拽 | Fill only, pointer-events none */
-const groupFrameFillStyle = (g) => {
+/** 打组底色 + 边框：纯视觉层，pointer-events:none，节点可在其上自由拖拽 | Visual only */
+const groupFrameStyle = (g) => {
   const { x, y, width, height } = groupFrameRect(g)
   return {
     left: `${x}px`,
@@ -691,19 +685,6 @@ const groupFrameFillStyle = (g) => {
     height: `${height}px`,
     background: groupFillBackground(g.fillKey),
     zIndex: 1
-  }
-}
-
-/** 打组描边与框内空白命中：z 低于 .vue-flow__nodes，节点在上可拖出框 | Border + hit below nodes layer */
-const groupFrameHitStyle = (g) => {
-  const { x, y, width, height } = groupFrameRect(g)
-  return {
-    left: `${x}px`,
-    top: `${y}px`,
-    width: `${width}px`,
-    height: `${height}px`,
-    background: 'transparent',
-    zIndex: 2
   }
 }
 
@@ -1232,10 +1213,22 @@ const onEdgesChange = (changes) => {
 }
 
 // Handle pane click | 处理画布点击
-const onPaneClick = () => {
+// pane-click 只在点到空白背景时触发（节点不冒泡），用来做框内空白选组
+const onPaneClick = (event) => {
   showNodeMenu.value = false
-  selectedGroupId.value = null
   closePaneContextMenu()
+  // 检查点击坐标是否落在某个打组框内 | Check if click is inside a group frame
+  const flowPos = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+  const hit = canvasGroups.value.find(g => {
+    const r = groupFrameRect(g)
+    return flowPos.x >= r.x && flowPos.x <= r.x + r.width &&
+           flowPos.y >= r.y && flowPos.y <= r.y + r.height
+  })
+  if (hit) {
+    selectGroup(hit.id)
+  } else {
+    selectedGroupId.value = null
+  }
 }
 
 // Handle project action | 处理项目操作
@@ -1490,10 +1483,9 @@ onUnmounted(() => {
   touch-action: none;
 }
 
-/* 节点层高于打组底色/描边命中层（z 1–2），低于顶栏工具栏（250+），便于框内拖出节点 | Nodes above group fill & hit, below chrome */
+/* 节点层：保持 Vue Flow 默认（不覆盖 z-index），打组框为纯视觉层不拦截事件 | Keep VueFlow default */
 .canvas-flow :deep(.vue-flow__nodes) {
-  position: relative;
-  z-index: 200;
+  /* default: pointer-events: none, transform-origin: 0 0 */
 }
 .canvas-flow :deep(.vue-flow__edges) {
   position: relative;
