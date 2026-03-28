@@ -581,8 +581,17 @@ const handleGenerate = async () => {
     return
   }
 
-  updateNode(props.id, { prompt: localPrompt.value, status: 'loading', scenes: [] })
-  genProgress.value  = 0
+  // 先中止上一次未完成的生成（防止并发）
+  abortCtrl?.abort()
+  // 完整重置节点数据，避免旧字段残留干扰下次解析
+  updateNode(props.id, {
+    status: 'loading',
+    scenes: [],
+    prompt: localPrompt.value,
+    taskId: null,
+    errorMsg: null
+  })
+  genProgress.value   = 0
   genCharsCount.value = 0
   abortCtrl = new AbortController()
   let fullText = ''
@@ -616,7 +625,7 @@ const handleGenerate = async () => {
       updateNode(props.id, { status: 'idle' })
     } else {
       console.error('[ScriptNode] 生成失败:', err.name, err.message, '\nfullText前200字符:', fullText?.slice(0, 200))
-      updateNode(props.id, { status: 'error' })
+      updateNode(props.id, { status: 'error', scenes: [] })
       window.$message?.error(err.message || '生成失败')
     }
   } finally {
