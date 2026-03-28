@@ -403,7 +403,7 @@ const TABLE_COLS = [
 ]
 
 // ── Props ──────────────────────────────────────────────────────────────
-const props = defineProps({ id: String, data: Object })
+const props = defineProps({ id: String, data: Object, position: Object })
 
 // ── Vue Flow ───────────────────────────────────────────────────────────
 const { updateNodeInternals } = useVueFlow()
