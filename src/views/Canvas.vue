@@ -494,6 +494,7 @@ import ImageNode from '../components/nodes/ImageNode.vue'
 import VideoConfigNode from '../components/nodes/VideoConfigNode.vue'
 import LLMConfigNode from '../components/nodes/LLMConfigNode.vue'
 import ScriptNode from '../components/nodes/ScriptNode.vue'
+import GroupProxyNode from '../components/nodes/GroupProxyNode.vue'
 import ImageRoleEdge from '../components/edges/ImageRoleEdge.vue'
 import PromptOrderEdge from '../components/edges/PromptOrderEdge.vue'
 import ImageOrderEdge from '../components/edges/ImageOrderEdge.vue'
@@ -577,7 +578,8 @@ const nodeTypes = {
   image: markRaw(ImageNode),
   videoConfig: markRaw(VideoConfigNode),
   llmConfig: markRaw(LLMConfigNode),
-  script: markRaw(ScriptNode)
+  script: markRaw(ScriptNode),
+  groupProxy: markRaw(GroupProxyNode)
 }
 
 // Register custom edge types | 注册自定义边类型

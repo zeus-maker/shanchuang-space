@@ -340,8 +340,8 @@ import {
   ExpandOutline, CloseOutline, CopyOutline, TrashOutline
 } from '@vicons/ionicons5'
 import {
-  updateNode, removeNode, duplicateNode, addNode, addEdge, addEdges, addNodes,
-  nodes, edges, addCanvasGroup, updateCanvasGroup,
+  updateNode, removeNode, duplicateNode, addNode, addEdge, addNodes,
+  nodes, edges, canvasGroups, addCanvasGroup, updateCanvasGroup,
   startBatchOperation, endBatchOperation
 } from '../../stores/canvas'
 import NodeHandleMenu from './NodeHandleMenu.vue'
@@ -602,15 +602,16 @@ const handleGenerateStoryboard = async () => {
   isGeneratingBoard.value = true
 
   try {
-    const COLS = 5, COL_W = 360, ROW_H = 540, GAP_X = 16, GAP_Y = 16
+    // NODE_W/NODE_H reflect actual rendered imageConfig dimensions (config-only, no image preview)
+    const COLS = 5, NODE_W = 340, NODE_H = 280, GAP_X = 12, GAP_Y = 12
     const baseX = (props.position?.x || 0) + 1080
     const baseY = (props.position?.y || 0)
 
     const nodeSpecs = localScenes.value.map((scene, i) => ({
       type: 'imageConfig',
       position: {
-        x: baseX + (i % COLS) * (COL_W + GAP_X),
-        y: baseY + Math.floor(i / COLS) * (ROW_H + GAP_Y)
+        x: baseX + (i % COLS) * (NODE_W + GAP_X),
+        y: baseY + Math.floor(i / COLS) * (NODE_H + GAP_Y)
       },
       data: {
         prompt: scene.storyboardPrompt || scene.description,
@@ -622,23 +623,35 @@ const handleGenerateStoryboard = async () => {
     const newIds = addNodes(nodeSpecs, false)
     endBatchOperation()
 
-    // Allow Vue to register nodes before computing group bounds
-    await new Promise(r => setTimeout(r, 120))
+    // 等待 Vue Flow 完成节点尺寸测量后再计算打组边界
+    await new Promise(r => setTimeout(r, 150))
 
+    let groupId = null
     if (newIds.length >= 2) {
-      const groupId = addCanvasGroup(newIds)
+      groupId = addCanvasGroup(newIds)
       if (groupId) updateCanvasGroup(groupId, { label: '分镜图 · 脚本生成器' })
     }
 
-    // 从脚本节点右侧连线到每个图片配置节点
-    if (newIds.length > 0) {
-      addEdges(newIds.map(targetId => ({
-        source: props.id,
-        target: targetId,
-        sourceHandle: 'script-output',
-        targetHandle: 'left',
-        type: 'default'
-      })))
+    // 创建虚拟代理节点作为打组框的连接入口，并连接脚本节点
+    if (groupId) {
+      const g = canvasGroups.value.find(x => x.id === groupId)
+      if (g?.frame) {
+        // 代理节点定位在打组框左边缘垂直居中
+        const proxyId = addNode('groupProxy', {
+          x: g.frame.x,
+          y: g.frame.y + g.frame.height / 2 - 6
+        }, {})
+        // 将代理节点加入组，使其随打组框一起移动
+        updateCanvasGroup(groupId, { memberIds: [...(g.memberIds || []), proxyId] })
+        // 从脚本节点右侧连线到代理节点（代表整个打组框）
+        addEdge({
+          source: props.id,
+          target: proxyId,
+          sourceHandle: 'script-output',
+          targetHandle: 'left',
+          type: 'default'
+        })
+      }
     }
 
     window.$message?.success(`已创建 ${newIds.length} 个分镜节点` + (newIds.length >= 2 ? '并打组' : ''))

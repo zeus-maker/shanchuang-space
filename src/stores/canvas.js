@@ -32,11 +32,12 @@ export const estimateNodeSize = (node) => {
   const map = {
     text: [300, 220],
     llmConfig: [360, 420],
-    imageConfig: [340, 520],
+    imageConfig: [340, 280],
     videoConfig: [340, 400],
     image: [280, 260],
     video: [280, 220],
-    script: [340, 450]
+    script: [340, 450],
+    groupProxy: [12, 12]
   }
   return map[t] || [300, 220]
 }
@@ -504,6 +505,8 @@ const getDefaultNodeData = (type) => {
         scenes: [],
         viewMode: 'table'
       }
+    case 'groupProxy':
+      return { label: '' }
     default:
       return {}
   }
