@@ -81,6 +81,19 @@
           💡 {{ currentModelConfig.tips }}
         </div>
 
+        <!-- Self prompt textarea | 节点自身提示词（分镜预填 / 手动输入） -->
+        <div class="space-y-1">
+          <span class="text-xs text-[var(--text-secondary)]">提示词</span>
+          <textarea
+            v-model="localPrompt"
+            @mousedown.stop
+            @keydown.stop
+            rows="3"
+            placeholder="输入提示词，或连接文本节点…"
+            class="nodrag w-full text-xs bg-[var(--bg-tertiary)] text-[var(--text-primary)] rounded-lg px-2 py-1.5 resize-none outline-none border border-transparent focus:border-[var(--accent-color)] transition-colors placeholder-[var(--text-tertiary)]"
+          />
+        </div>
+
         <!-- Connected inputs indicator | 连接输入指示 -->
         <div
           class="flex items-center gap-2 text-xs text-[var(--text-secondary)] py-1 border-t border-[var(--border-color)]">
@@ -200,6 +213,7 @@ const showHandleMenu = ref(false)
 const localModel = ref(props.data?.model || DEFAULT_IMAGE_MODEL)
 const localSize = ref(props.data?.size || '2048x2048')
 const localQuality = ref(props.data?.quality || 'standard')
+const localPrompt = ref(props.data?.prompt || '')
 
 // Label editing state | Label 编辑状态
 const isEditingLabel = ref(false)
@@ -483,6 +497,13 @@ const getConnectedInputs = () => {
   const combinedPrompt = prompts.map(p => p.content).join('\n\n')
 
   // Use edge-connected refImages (already sorted above) | 使用边连接的参考图（已在上面排序）
+
+  // 6. 最终 fallback：无任何连接时使用节点自身存储的 prompt（分镜生成器预填的分镜提示词）
+  if (!combinedPrompt && sortedRefImages.length === 0 && localPrompt.value.trim()) {
+    const sp = localPrompt.value.trim()
+    return { prompt: sp, prompts: [{ order: 0, content: sp, nodeId: props.id }], refImages: [], refImagesWithOrder: [], fromMentions: false }
+  }
+
   return { prompt: combinedPrompt, prompts, refImages: sortedRefImages, refImagesWithOrder: allRefImages, fromMentions: false }
 }
 
@@ -762,6 +783,14 @@ watch(() => props.data?.model, (newModel) => {
     }
   }
 })
+
+// 同步外部写入的 data.prompt（如脚本生成器重新生成分镜时覆盖）
+watch(() => props.data?.prompt, (val) => {
+  if (val !== undefined && val !== localPrompt.value) localPrompt.value = val || ''
+})
+
+// 将本地编辑的 prompt 写回节点 data
+watch(localPrompt, (val) => updateNode(props.id, { prompt: val }))
 
 // 修复 Vue Flow visibility: hidden 问题
 watch(() => props.data, () => {
