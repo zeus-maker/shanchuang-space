@@ -1014,6 +1014,7 @@ const nodeTypeOptions = [
   { type: 'llmConfig', name: 'LLM文本生成', icon: ChatbubbleOutline, color: '#a855f7' },
   { type: 'imageConfig', name: '文生图配置', icon: ColorPaletteOutline, color: '#22c55e' },
   { type: 'videoConfig', name: '视频生成配置', icon: VideocamOutline, color: '#f59e0b' },
+  { type: 'script', name: '脚本生成器', icon: DocumentTextOutline, color: '#f59e0b' },
   { type: 'image', name: '图片节点', icon: ImageOutline, color: '#8b5cf6' },
   { type: 'video', name: '视频节点', icon: VideocamOutline, color: '#ef4444' }
 ]
