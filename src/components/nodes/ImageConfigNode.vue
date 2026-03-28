@@ -46,19 +46,45 @@
 
       <!-- Image preview area -->
       <div class="icn-preview">
-        <img v-if="previewImageUrl" :src="previewImageUrl" class="icn-preview-img" alt="生成结果" />
+        <!-- Single image -->
+        <template v-if="previewImages.length === 1">
+          <img :src="previewImages[0]" class="icn-preview-img" alt="生成结果" />
+        </template>
+
+        <!-- Multiple images grid (n > 1) -->
+        <template v-else-if="previewImages.length > 1">
+          <div class="icn-preview-grid" :class="`icn-grid-${previewImages.length}`">
+            <img
+              v-for="(url, i) in previewImages"
+              :key="i"
+              :src="url"
+              class="icn-preview-grid-img"
+              :alt="`生成结果 ${i + 1}`"
+            />
+          </div>
+        </template>
+
+        <!-- Placeholder -->
         <div v-else class="icn-preview-empty">
           <n-icon :size="40" class="icn-empty-icon"><ImageOutline /></n-icon>
         </div>
 
         <!-- Quick action hints (only when no image and not loading) -->
-        <div v-if="!previewImageUrl && !loading" class="icn-try-actions">
+        <div v-if="previewImages.length === 0 && !loading" class="icn-try-actions">
           <span class="icn-try-label">尝试:</span>
           <button class="icn-try-btn" @click.stop="handleImg2Img">
             <n-icon :size="11"><ImagesOutline /></n-icon>图生图
           </button>
           <button class="icn-try-btn" @click.stop="handleUpscale">
             <n-icon :size="11"><ExpandOutline /></n-icon>图片高清
+          </button>
+        </div>
+
+        <!-- Regenerate overlay on hover (when image exists) -->
+        <div v-if="previewImages.length > 0 && !loading" class="icn-regen-overlay">
+          <button class="icn-regen-btn" @click.stop="handleGenerate" title="重新生成">
+            <n-icon :size="14"><RefreshOutline /></n-icon>
+            重新生成
           </button>
         </div>
 
@@ -182,7 +208,7 @@
             <!-- Execute button -->
             <button
               class="icn-run-btn"
-              @click.stop="handleGenerate('auto')"
+              @click.stop="handleGenerate()"
               :disabled="loading"
               title="立即生成"
             >
@@ -192,8 +218,8 @@
           </div>
 
           <!-- Error message -->
-          <div v-if="error" class="icn-error">
-            {{ error.message || '生成失败，请重试' }}
+          <div v-if="data.generateError" class="icn-error">
+            {{ data.generateError }}
           </div>
         </div>
       </Transition>
@@ -306,7 +332,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NDropdown, NSpin } from 'naive-ui'
 import {
-  ChevronDownOutline, CopyOutline, TrashOutline, ImageOutline,
+  ChevronDownOutline, CopyOutline, TrashOutline, ImageOutline, RefreshOutline,
   CloudUploadOutline, ImagesOutline, ExpandOutline, ColorPaletteOutline,
   BookmarkOutline, ScanOutline, LibraryOutline, VideocamOutline,
   OptionsOutline, FlashOutline, SendOutline, SwapVerticalOutline,
@@ -538,15 +564,10 @@ const creditCost = computed(() => {
   return base * localCount.value
 })
 
-// Preview: show the most recent connected output image URL
-const previewImageUrl = computed(() => {
-  const outEdges = edges.value.filter(e => e.source === props.id)
-  for (const edge of outEdges) {
-    const target = nodes.value.find(n => n.id === edge.target)
-    if (target?.type === 'image' && target.data?.url) return target.data.url
-  }
-  return null
-})
+// Preview: show images generated inline within this node
+const previewImages = computed(() => props.data?.generatedUrls || (props.data?.generatedUrl ? [props.data.generatedUrl] : []))
+const previewImageUrl = computed(() => previewImages.value[0] || null)
+const previewCurrentIndex = ref(0)
 
 // ─── Node menu operations ─────────────────────────────────────────────────────
 
@@ -806,29 +827,9 @@ const getConnectedInputs = () => {
 const connectedPrompts = computed(() => getConnectedInputs().prompts)
 const connectedRefImages = computed(() => getConnectedInputs().refImages)
 
-// ─── Generate ─────────────────────────────────────────────────────────────────
+// ─── Generate (inline — result stored in this node, no output node created) ───
 
-const createdImageNodeId = ref(null)
-
-const findConnectedOutputImageNode = (onlyEmpty = true) => {
-  const outEdges = edges.value.filter(e => e.source === props.id)
-  for (const edge of outEdges) {
-    const target = nodes.value.find(n => n.id === edge.target)
-    if (target?.type === 'image') {
-      if (onlyEmpty ? (!target.data?.url || target.data.url === '') : true) return target.id
-    }
-  }
-  return null
-}
-
-const hasConnectedImageWithContent = computed(() => {
-  return edges.value.filter(e => e.source === props.id).some(edge => {
-    const target = nodes.value.find(n => n.id === edge.target)
-    return target?.type === 'image' && target.data?.url
-  })
-})
-
-const handleGenerate = async (mode = 'auto') => {
+const handleGenerate = async () => {
   const { prompt, prompts, refImages, refImagesWithOrder } = getConnectedInputs()
 
   if (!prompt && refImages.length === 0) {
@@ -848,37 +849,9 @@ const handleGenerate = async (mode = 'auto') => {
     return
   }
 
-  const n = localCount.value || 1
-  const currentNode = nodes.value.find(nd => nd.id === props.id)
-  const nodeX = currentNode?.position?.x || 0
-  const nodeY = currentNode?.position?.y || 0
-
-  let imageNodeId = null
-
-  if (mode === 'replace') {
-    imageNodeId = findConnectedOutputImageNode(false)
-    if (imageNodeId) updateNode(imageNodeId, { loading: true, url: '' })
-  } else if (mode === 'new') {
-    imageNodeId = null
-  } else {
-    imageNodeId = findConnectedOutputImageNode(true)
-    if (imageNodeId) updateNode(imageNodeId, { loading: true })
-  }
-
-  if (!imageNodeId) {
-    let yOffset = 0
-    if (mode === 'new') {
-      const outEdges = edges.value.filter(e => e.source === props.id)
-      yOffset = outEdges.length * 280
-    }
-    imageNodeId = addNode('image', { x: nodeX + 400, y: nodeY + yOffset }, {
-      url: '', loading: true, label: '图像生成结果'
-    })
-    addEdge({ source: props.id, target: imageNodeId, sourceHandle: 'right', targetHandle: 'left' })
-  }
-
-  createdImageNodeId.value = imageNodeId
-  setTimeout(() => updateNodeInternals(imageNodeId), 50)
+  // Clear previous results and mark as generating
+  updateNode(props.id, { generatedUrls: [], generateError: null })
+  previewCurrentIndex.value = 0
 
   try {
     const params = {
@@ -886,33 +859,24 @@ const handleGenerate = async (mode = 'auto') => {
       prompt,
       size: localSize.value,
       quality: localQuality.value,
-      n
+      n: localCount.value || 1
     }
     if (refImages.length > 0) params.image = refImages
 
     const result = await generate(params)
 
     if (result && result.length > 0) {
-      updateNode(imageNodeId, { url: result[0].url, loading: false, label: '文生图', model: localModel.value, updatedAt: Date.now() })
-
-      // Create additional nodes for n > 1
-      for (let i = 1; i < result.length; i++) {
-        const extraId = addNode('image', { x: nodeX + 400, y: nodeY + i * 300 }, {
-          url: result[i].url, loading: false, label: `文生图 ${i + 1}`, model: localModel.value
-        })
-        addEdge({ source: props.id, target: extraId, sourceHandle: 'right', targetHandle: 'left' })
-      }
-
-      updateNode(props.id, { executed: true, outputNodeId: imageNodeId })
+      const urls = result.map(r => r.url).filter(Boolean)
+      updateNode(props.id, { generatedUrls: urls, executed: true, updatedAt: Date.now() })
     }
     window.$message?.success('图片生成成功')
   } catch (err) {
-    updateNode(imageNodeId, { loading: false, error: err.message || '生成失败', updatedAt: Date.now() })
+    updateNode(props.id, { generateError: err.message || '生成失败' })
     window.$message?.error(err.message || '图片生成失败')
   }
 }
 
-registerCanvasGroupNodeExecuteBridge(() => props.id, () => handleGenerate('auto'))
+registerCanvasGroupNodeExecuteBridge(() => props.id, () => handleGenerate())
 
 // ─── Duplicate + delete ───────────────────────────────────────────────────────
 
@@ -1100,6 +1064,56 @@ onMounted(() => {
   transition: background 0.12s;
 }
 .icn-try-btn:hover { background: rgba(0,0,0,0.55); color: var(--text-primary); }
+
+/* ─── Multi-image grid ────────────────────────────────────────────────────── */
+.icn-preview-grid {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  gap: 2px;
+}
+.icn-grid-2 { grid-template-columns: 1fr 1fr; }
+.icn-grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.icn-preview-grid-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ─── Regenerate overlay (hover) ─────────────────────────────────────────── */
+.icn-regen-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  pointer-events: none;
+}
+.icn-preview:hover .icn-regen-overlay {
+  opacity: 1;
+  background: rgba(0,0,0,0.3);
+  pointer-events: auto;
+}
+.icn-regen-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.25);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.12s;
+}
+.icn-regen-btn:hover { background: rgba(0,0,0,0.8); }
 
 .icn-loading-overlay {
   position: absolute;
