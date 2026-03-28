@@ -35,7 +35,8 @@ export const estimateNodeSize = (node) => {
     imageConfig: [340, 520],
     videoConfig: [340, 400],
     image: [280, 260],
-    video: [280, 220]
+    video: [280, 220],
+    script: [340, 450]
   }
   return map[t] || [300, 220]
 }
@@ -492,6 +493,15 @@ const getDefaultNodeData = (type) => {
         outputContent: '',
         label: 'LLM文本生成',
         publicProps: {}  // 公共属性（可被 @ 引用）
+      }
+    case 'script':
+      return {
+        label: '脚本生成器',
+        prompt: '',
+        model: DEFAULT_CHAT_MODEL,
+        status: 'idle',
+        scenes: [],
+        viewMode: 'table'
       }
     default:
       return {}

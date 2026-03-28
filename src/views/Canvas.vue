@@ -89,7 +89,7 @@
               title="点击选中分组；拖动可同时平移打组框与组内节点"
               @pointerdown="onGroupChromePointerDown(g, $event)"
             >
-              <span class="text-xs font-medium truncate">分组 · {{ g.memberIds.length }} 节点</span>
+              <span class="text-xs font-medium truncate">{{ g.label || `分组 · ${g.memberIds.length} 节点` }}</span>
               <span class="text-[10px] text-[var(--text-tertiary)] shrink-0">{{ selectedGroupId === g.id ? '已选' : '点我选分组' }}</span>
             </div>
             <div
@@ -416,7 +416,8 @@ import {
   RemoveOutline,
   DownloadOutline,
   AppsOutline,
-  ChatbubbleOutline
+  ChatbubbleOutline,
+  DocumentTextOutline
 } from '@vicons/ionicons5'
 import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds, applyCanvasGroupFrameDelta } from '../stores/canvas'
 import { loadAllModels } from '../stores/models'
@@ -488,6 +489,7 @@ import VideoNode from '../components/nodes/VideoNode.vue'
 import ImageNode from '../components/nodes/ImageNode.vue'
 import VideoConfigNode from '../components/nodes/VideoConfigNode.vue'
 import LLMConfigNode from '../components/nodes/LLMConfigNode.vue'
+import ScriptNode from '../components/nodes/ScriptNode.vue'
 import ImageRoleEdge from '../components/edges/ImageRoleEdge.vue'
 import PromptOrderEdge from '../components/edges/PromptOrderEdge.vue'
 import ImageOrderEdge from '../components/edges/ImageOrderEdge.vue'
@@ -570,7 +572,8 @@ const nodeTypes = {
   video: markRaw(VideoNode),
   image: markRaw(ImageNode),
   videoConfig: markRaw(VideoConfigNode),
-  llmConfig: markRaw(LLMConfigNode)
+  llmConfig: markRaw(LLMConfigNode),
+  script: markRaw(ScriptNode)
 }
 
 // Register custom edge types | 注册自定义边类型
@@ -1000,6 +1003,7 @@ const tools = [
   { id: 'image', name: '图片', icon: ImageOutline, action: () => addNewNode('image') },
   { id: 'imageConfig', name: '文生图', icon: ColorPaletteOutline, action: () => addNewNode('imageConfig') },
   { id: 'videoConfig', name: '视频生成', icon: VideocamOutline, action: () => addNewNode('videoConfig') },
+  { id: 'script', name: '脚本', icon: DocumentTextOutline, action: () => addNewNode('script') },
   { id: 'undo', name: '撤销', icon: ArrowUndoOutline, action: () => undo(), disabled: () => !canUndo() },
   { id: 'redo', name: '重做', icon: ArrowRedoOutline, action: () => redo(), disabled: () => !canRedo() }
 ]
