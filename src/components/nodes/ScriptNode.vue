@@ -340,7 +340,7 @@ import {
   ExpandOutline, CloseOutline, CopyOutline, TrashOutline
 } from '@vicons/ionicons5'
 import {
-  updateNode, removeNode, duplicateNode, addNode, addEdge, addNodes,
+  updateNode, removeNode, duplicateNode, addNode, addEdge, addEdges, addNodes,
   nodes, edges, addCanvasGroup, updateCanvasGroup,
   startBatchOperation, endBatchOperation
 } from '../../stores/canvas'
@@ -602,15 +602,15 @@ const handleGenerateStoryboard = async () => {
   isGeneratingBoard.value = true
 
   try {
-    const COLS = 5, COL_W = 360, ROW_H = 540, GAP = 40
+    const COLS = 5, COL_W = 360, ROW_H = 540, GAP_X = 16, GAP_Y = 16
     const baseX = (props.position?.x || 0) + 1080
     const baseY = (props.position?.y || 0)
 
     const nodeSpecs = localScenes.value.map((scene, i) => ({
       type: 'imageConfig',
       position: {
-        x: baseX + (i % COLS) * (COL_W + GAP),
-        y: baseY + Math.floor(i / COLS) * (ROW_H + GAP)
+        x: baseX + (i % COLS) * (COL_W + GAP_X),
+        y: baseY + Math.floor(i / COLS) * (ROW_H + GAP_Y)
       },
       data: {
         prompt: scene.storyboardPrompt || scene.description,
@@ -628,6 +628,17 @@ const handleGenerateStoryboard = async () => {
     if (newIds.length >= 2) {
       const groupId = addCanvasGroup(newIds)
       if (groupId) updateCanvasGroup(groupId, { label: '分镜图 · 脚本生成器' })
+    }
+
+    // 从脚本节点右侧连线到每个图片配置节点
+    if (newIds.length > 0) {
+      addEdges(newIds.map(targetId => ({
+        source: props.id,
+        target: targetId,
+        sourceHandle: 'script-output',
+        targetHandle: 'left',
+        type: 'default'
+      })))
     }
 
     window.$message?.success(`已创建 ${newIds.length} 个分镜节点` + (newIds.length >= 2 ? '并打组' : ''))

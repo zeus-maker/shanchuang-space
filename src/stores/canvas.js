@@ -454,11 +454,12 @@ const getDefaultNodeData = (type) => {
         publicProps: {}  // 公共属性（可被 @ 引用）
       }
     case 'imageConfig': {
-      const imageModel = IMAGE_MODELS.find(m => m.key === DEFAULT_IMAGE_MODEL) || IMAGE_MODELS[0]
+      const SEEDREAM_KEY = 'doubao-seedream-4-5-251128'
+      const imageModel = IMAGE_MODELS.find(m => m.key === SEEDREAM_KEY) || IMAGE_MODELS.find(m => m.key === DEFAULT_IMAGE_MODEL) || IMAGE_MODELS[0]
       return {
         prompt: '',
-        model: DEFAULT_IMAGE_MODEL,
-        size: imageModel?.defaultParams?.size || '1x1',
+        model: imageModel?.key || SEEDREAM_KEY,
+        size: imageModel?.defaultParams?.size || '2048x2048',
         quality: imageModel?.defaultParams?.quality || 'standard',
         label: '文生图'
       }

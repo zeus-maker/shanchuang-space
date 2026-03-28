@@ -362,13 +362,17 @@
 
     <!-- 整组执行说明 | Group execute info -->
     <n-modal v-model:show="showGroupExecuteModal" preset="card" title="整组执行" style="width: 480px; max-width: 92vw;">
-      <p class="text-sm text-[var(--text-secondary)] mb-2">将按下方顺序依次触发组内文生图、视频、LLM 配置节点的生成（与连线依赖拓扑一致）。确认后开始执行。</p>
+      <p class="text-sm text-[var(--text-secondary)] mb-2">将并行触发组内文生图、视频、LLM 配置节点的生成，确认后开始执行。</p>
       <n-input v-model:value="groupExecutePromptNote" type="textarea" placeholder="可选：整组提示说明（将记入本次操作，暂不自动注入各节点）" :rows="3" class="mb-3" />
       <ol class="text-sm list-decimal pl-5 space-y-1 max-h-48 overflow-y-auto">
         <li v-for="nid in groupExecuteOrder" :key="nid">
           {{ nodeLabelForId(nid) }} <span class="text-[var(--text-tertiary)]">({{ nid }})</span>
         </li>
       </ol>
+      <div v-if="isGroupExecuting" class="mt-3 space-y-1">
+        <n-progress type="line" :percentage="groupExecuteProgress" :show-indicator="false" color="#f59e0b" rail-color="rgba(245,158,11,0.15)" />
+        <p class="text-xs text-[var(--text-tertiary)]">并行执行中… {{ groupExecuteProgress }}%</p>
+      </div>
       <template #footer>
         <n-button :disabled="isGroupExecuting" @click="showGroupExecuteModal = false">取消</n-button>
         <n-button type="primary" :loading="isGroupExecuting" :disabled="isGroupExecuting" @click="confirmGroupExecute">确认执行</n-button>
@@ -396,7 +400,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
-import { NIcon, NSwitch, NDropdown, NMessageProvider, NSpin, NModal, NInput, NButton } from 'naive-ui'
+import { NIcon, NSwitch, NDropdown, NMessageProvider, NSpin, NModal, NInput, NButton, NProgress } from 'naive-ui'
 import { 
   ChevronBackOutline,
   ChevronDownOutline,
@@ -618,6 +622,7 @@ const showGroupExecuteModal = ref(false)
 const groupExecutePromptNote = ref('')
 const groupExecuteOrder = ref([])
 const isGroupExecuting = ref(false)
+const groupExecuteProgress = ref(0)
 const GROUP_EXECUTE_TIMEOUT_MS = 600_000
 const GROUP_EXECUTABLE_TYPES = ['imageConfig', 'videoConfig', 'llmConfig']
 const showToolboxNameModal = ref(false)
@@ -863,17 +868,27 @@ const confirmGroupExecute = async () => {
     return
   }
   isGroupExecuting.value = true
-  try {
-    for (const nodeId of executable) {
-      await requestGroupNodeExecute(nodeId)
-    }
+  groupExecuteProgress.value = 0
+  let completed = 0
+
+  const results = await Promise.allSettled(
+    executable.map(nodeId =>
+      requestGroupNodeExecute(nodeId).then(() => {
+        completed++
+        groupExecuteProgress.value = Math.round(completed / executable.length * 100)
+      })
+    )
+  )
+
+  isGroupExecuting.value = false
+  const failedCount = results.filter(r => r.status === 'rejected').length
+  if (!failedCount) {
     window.$message?.success('整组执行已完成')
     showGroupExecuteModal.value = false
-  } catch (e) {
-    window.$message?.error(e?.message || '整组执行中断')
-  } finally {
-    isGroupExecuting.value = false
+  } else {
+    window.$message?.warning(`${executable.length - failedCount}/${executable.length} 个节点执行完成，${failedCount} 个失败`)
   }
+  groupExecuteProgress.value = 0
 }
 
 const onGroupLayoutSelect = (key) => {
@@ -893,6 +908,28 @@ const ungroupSelected = () => {
   if (!selectedGroupId.value) return
   removeCanvasGroup(selectedGroupId.value)
   selectedGroupId.value = null
+}
+
+/** 选中打组框时按 Delete/Backspace 删除全部成员节点与组 */
+const deleteSelectedGroup = () => {
+  if (!selectedGroupId.value) return
+  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g) return
+  const memberSet = new Set(g.memberIds)
+  nodes.value = nodes.value.filter(n => !memberSet.has(n.id))
+  edges.value = edges.value.filter(e => !memberSet.has(e.source) && !memberSet.has(e.target))
+  removeCanvasGroup(selectedGroupId.value)
+  selectedGroupId.value = null
+  manualSaveHistory()
+}
+
+const handleGroupDeleteKey = (e) => {
+  if (!selectedGroupId.value) return
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return
+  const tag = document.activeElement?.tagName?.toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return
+  e.preventDefault()
+  deleteSelectedGroup()
 }
 
 const downloadSelectedGroup = () => {
@@ -1437,6 +1474,7 @@ watch(
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  window.addEventListener('keydown', handleGroupDeleteKey)
 
   if (typeof navigator !== 'undefined') {
     const pf = navigator.platform || ''
@@ -1466,6 +1504,7 @@ onMounted(() => {
 // Cleanup on unmount | 卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+  window.removeEventListener('keydown', handleGroupDeleteKey)
   closePaneContextMenu()
   abortGroupChromeDrag()
   // Save project before leaving | 离开前保存项目
