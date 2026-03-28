@@ -16,7 +16,7 @@
 
 - **面板位置**: 不再使用全屏 `Teleport` 遮罩；设置面板放在 Vue Flow `#zoom-pane` 内，用 `groupBatchVideoPanelStyle(g)` 贴在当前选中**分镜打组框下沿**（画布坐标），随画布缩放与平移。
 - **自动剪辑**: 当选中组内全部为已完成的 `video` 节点（有 `url`、无 loading/错误）时，工具栏显示「自动剪辑」。点击后动态加载 `videoConcat.js`，用 FFmpeg.wasm（CDN 拉取 `@ffmpeg/core`）按节点网格顺序拼接；单段则直接 `fetch` 成 blob 下载。跨域导致 `fetch` 失败时会提示改用批量下载或本地合并。
-- **批量下载**: 组内多于 1 个可下载的 `image`/`video` 节点时，动态加载 `groupZipDownload.js`，打包为**一个 zip** 下载；仅 1 个时仍新开标签打开直链。无法拉取的二进制会写入 `.url.txt` 备用。
+- **批量下载**: 组内多于 1 个可下载的 `image`/`video` 节点时，动态加载 `groupZipDownload.js`，打包为**一个 zip**（zip 内为真实媒体二进制，非链接）。**仅 1 个**时通过 `fetch` + Blob 触发浏览器「保存文件」（`.mp4`/图片），不再用 `window.open` 仅打开播放页。若 CORS 无法拉取字节，则退回新开标签并提示「另存为」；整包 zip 全失败时改为**间隔逐个**触发文件下载。实现见 `src/utils/mediaDownload.js`。
 
 ---
 

@@ -1038,30 +1038,48 @@ const downloadSelectedGroup = async () => {
     window.$message?.info('组内没有可下载的图片/视频链接')
     return
   }
+
+  const { downloadUrlToFile, downloadManyNodesMedia, buildMediaDownloadName } = await import('../utils/mediaDownload.js')
+
   if (list.length === 1) {
-    window.open(list[0].data.url, '_blank')
-    window.$message?.success('已打开下载链接')
+    try {
+      await downloadUrlToFile(list[0].data.url, buildMediaDownloadName(list[0], 0))
+      window.$message?.success('已开始下载文件')
+    } catch {
+      window.$message?.warning('无法跨域拉取文件，已打开原链接，请在播放页中「另存为」')
+      window.open(list[0].data.url, '_blank', 'noopener,noreferrer')
+    }
     return
   }
-  window.$message?.info('正在将组内素材打包为一个 zip，体积大时请耐心等待…')
+
+  window.$message?.info('正在拉取组内文件并打包为 zip，体积大时请耐心等待…')
   try {
     const { zipGroupMediaNodes } = await import('../utils/groupZipDownload.js')
     const { blob, fileName, embedded, linkOnly } = await zipGroupMediaNodes(list, g.label)
+    if (embedded === 0 && linkOnly > 0) {
+      window.$message?.warning('无法打包（多为跨域限制），改为逐个下载视频/图片文件…')
+      const { ok, opened } = await downloadManyNodesMedia(list)
+      window.$message?.success(
+        `已触发 ${ok} 个文件下载${opened ? `；另有 ${opened} 个已打开链接需手动保存` : ''}`
+      )
+      return
+    }
     const a = document.createElement('a')
     const href = URL.createObjectURL(blob)
     a.href = href
     a.download = fileName
+    a.rel = 'noopener'
     a.click()
     URL.revokeObjectURL(href)
     let msg = embedded
       ? `已下载压缩包（内含 ${embedded} 个文件）`
       : '已下载压缩包'
     if (linkOnly) {
-      msg += `；另有 ${linkOnly} 个因跨域限制仅保存了链接 txt，请手动打开原链接下载`
+      msg += `；另有 ${linkOnly} 个因跨域仅含链接 txt`
     }
     window.$message?.success(msg)
   } catch (e) {
-    window.$message?.error('打包失败：' + (e?.message || e))
+    window.$message?.error('下载失败：' + (e?.message || e))
   }
 }
 
@@ -1386,7 +1404,7 @@ const saveSelectionToMaterials = () => {
   window.$message?.success(`已将 ${entries.length} 条记入项目素材（canvasData.savedMaterials）`)
 }
 
-const batchDownloadSelection = () => {
+const batchDownloadSelection = async () => {
   const withUrl = multiSelectedNodes.value.filter(n =>
     (n.type === 'image' || n.type === 'video') && n.data?.url
   )
@@ -1394,8 +1412,42 @@ const batchDownloadSelection = () => {
     window.$message?.info('选中节点中没有带链接的图片/视频')
     return
   }
-  withUrl.forEach(n => window.open(n.data.url, '_blank'))
-  window.$message?.success(`已打开 ${withUrl.length} 个链接`)
+  const { downloadUrlToFile, downloadManyNodesMedia, buildMediaDownloadName } = await import('../utils/mediaDownload.js')
+  if (withUrl.length === 1) {
+    try {
+      await downloadUrlToFile(withUrl[0].data.url, buildMediaDownloadName(withUrl[0], 0))
+      window.$message?.success('已开始下载文件')
+    } catch {
+      window.$message?.warning('无法跨域拉取，已打开原链接请另存为')
+      window.open(withUrl[0].data.url, '_blank', 'noopener,noreferrer')
+    }
+    return
+  }
+  window.$message?.info('正在打包选中素材…')
+  try {
+    const { zipGroupMediaNodes } = await import('../utils/groupZipDownload.js')
+    const { blob, fileName, embedded, linkOnly } = await zipGroupMediaNodes(withUrl, '选中素材')
+    if (embedded === 0 && linkOnly > 0) {
+      window.$message?.warning('无法打包，改为逐个下载…')
+      const { ok, opened } = await downloadManyNodesMedia(withUrl)
+      window.$message?.success(
+        `已触发 ${ok} 个文件下载${opened ? `；${opened} 个已打开链接需手动保存` : ''}`
+      )
+      return
+    }
+    const a = document.createElement('a')
+    const href = URL.createObjectURL(blob)
+    a.href = href
+    a.download = fileName
+    a.rel = 'noopener'
+    a.click()
+    URL.revokeObjectURL(href)
+    window.$message?.success(
+      `已下载压缩包（${embedded} 个文件${linkOnly ? `，${linkOnly} 个为链接 txt` : ''}）`
+    )
+  } catch (e) {
+    window.$message?.error('打包失败：' + (e?.message || e))
+  }
 }
 
 const duplicateSelection = () => {
