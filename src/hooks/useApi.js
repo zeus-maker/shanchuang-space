@@ -190,26 +190,7 @@ export const useImageGeneration = () => {
     try {
       const modelConfig = getModelByName(params.model)
 
-      // Build request data | 构建请求数据
-      const requestData = {
-        model: params.model,
-        prompt: params.prompt,
-        size: params.size || modelConfig?.defaultParams?.size || '2048x2048',
-        // n: params.n || 1
-      }
-
-      if (params.quality != null && params.quality !== '') {
-        requestData.quality = params.quality
-      }
-      if (params.n != null) {
-        requestData.n = params.n
-      }
-
-      // Add reference image if provided | 添加参考图
-      if (params.image) {
-        requestData.image = params.image
-      }
-
+      // ── Resolve provider, endpoint, API key ─────────────────────────────────
       const imageProvider = usesVolcengineImageApi(params.model) ? 'volcengine' : modelStore.currentProvider
       const providerCfg = getProviderConfig(imageProvider)
       const baseUrl =
@@ -236,17 +217,35 @@ export const useImageGeneration = () => {
         throw err
       }
 
-      const adaptReq = providerCfg.requestAdapter?.image
-      const adaptedParams = adaptReq ? adaptReq(requestData) : requestData
+      // ── Single-request helper ────────────────────────────────────────────────
+      const callOnce = async () => {
+        const requestData = {
+          model: params.model,
+          prompt: params.prompt,
+          size: params.size || modelConfig?.defaultParams?.size || '2048x2048',
+        }
+        if (params.quality != null && params.quality !== '') requestData.quality = params.quality
+        if (params.image) requestData.image = params.image
+        // Always n=1 per call; multiple images are handled by parallel calls below
+        requestData.n = 1
 
-      const response = await generateImage(adaptedParams, {
-        requestType: 'json',
-        endpoint,
-        headers: { Authorization: `Bearer ${apiKeyForImage}` }
-      })
+        const adaptReq = providerCfg.requestAdapter?.image
+        const adaptedParams = adaptReq ? adaptReq(requestData) : requestData
 
-      const adaptResp = providerCfg.responseAdapter?.image
-      const adaptedData = adaptResp ? adaptResp(response) : adaptResponse('image', response)
+        const response = await generateImage(adaptedParams, {
+          requestType: 'json',
+          endpoint,
+          headers: { Authorization: `Bearer ${apiKeyForImage}` }
+        })
+
+        const adaptResp = providerCfg.responseAdapter?.image
+        return adaptResp ? adaptResp(response) : adaptResponse('image', response)
+      }
+
+      // ── Fire n parallel requests (most image APIs only support n=1 per call) ─
+      const count = Math.max(1, params.n || 1)
+      const results = await Promise.all(Array.from({ length: count }, () => callOnce()))
+      const adaptedData = results.flat()
 
       images.value = adaptedData
       currentImage.value = adaptedData[0] || null
@@ -295,6 +294,7 @@ export const useVideoGeneration = () => {
     if (params.dur) requestData.seconds = params.dur
     if (params.resolution) requestData.resolution = params.resolution
     else if (modelConfig?.defaultResolution) requestData.resolution = modelConfig.defaultResolution
+    if (params.generateAudio !== undefined) requestData.generateAudio = params.generateAudio
 
     const videoProvider = usesVolcengineVideoApi(params.model) ? 'volcengine' : modelStore.currentProvider
     const providerCfg = getProviderConfig(videoProvider)

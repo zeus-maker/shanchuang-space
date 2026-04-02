@@ -108,6 +108,10 @@
             <template #icon><n-icon><GridOutline /></n-icon></template>
             生成分镜
           </n-button>
+          <n-button size="small" type="info" ghost @click="handleOpenBatchVideo" :disabled="!localScenes.length">
+            <template #icon><n-icon><VideocamOutline /></n-icon></template>
+            批量生成视频
+          </n-button>
           <span class="ml-auto text-[11px] text-[var(--text-tertiary)]">共 {{ localScenes.length }} 个分镜</span>
         </div>
 
@@ -251,6 +255,10 @@
           <template #icon><n-icon><GridOutline /></n-icon></template>
           生成分镜
         </n-button>
+        <n-button type="info" ghost @click="handleOpenBatchVideo" :disabled="!localScenes.length">
+          <template #icon><n-icon><VideocamOutline /></n-icon></template>
+          批量生成视频
+        </n-button>
       </div>
 
       <!-- Fullscreen content -->
@@ -321,6 +329,101 @@
       </div>
     </div>
   </Teleport>
+
+  <!-- Batch video generation panel -->
+  <Teleport to="body">
+    <Transition name="bv-panel">
+      <div v-if="showBatchVideoPanel" class="bv-overlay" @click.self="handleCloseBatchVideo">
+        <div class="bv-panel" @click.stop>
+          <!-- Settings area -->
+          <div class="bv-settings">
+            <!-- Ratio -->
+            <div class="bv-section">
+              <span class="bv-section-title">比例</span>
+              <div class="bv-option-row">
+                <button
+                  v-for="r in bvRatioList"
+                  :key="r"
+                  class="bv-option-btn"
+                  :class="{ active: bvRatio === r }"
+                  @click="bvRatio = r"
+                >
+                  <span class="bv-ratio-icon" :class="`ratio-${r.replace(':', 'x')}`"></span>
+                  {{ r }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Audio -->
+            <div class="bv-section">
+              <span class="bv-section-title">生成音频 <span class="bv-hint">ⓘ</span></span>
+              <div class="bv-option-row">
+                <button class="bv-option-btn" :class="{ active: bvAudio }" @click="bvAudio = true">开启</button>
+                <button class="bv-option-btn" :class="{ active: !bvAudio }" @click="bvAudio = false">关闭</button>
+              </div>
+            </div>
+
+            <!-- Duration -->
+            <div class="bv-section">
+              <span class="bv-section-title">时长</span>
+              <div class="bv-option-row">
+                <button
+                  v-for="d in bvDurList"
+                  :key="d.key"
+                  class="bv-option-btn"
+                  :class="{ active: bvDuration === d.key }"
+                  @click="bvDuration = d.key"
+                >{{ d.label }}</button>
+              </div>
+            </div>
+
+            <!-- Resolution -->
+            <div class="bv-section">
+              <span class="bv-section-title">生成品质</span>
+              <div class="bv-option-row">
+                <button
+                  v-for="res in bvResolutionList"
+                  :key="res"
+                  class="bv-option-btn"
+                  :class="{ active: bvResolution === res }"
+                  @click="bvResolution = res"
+                >{{ res === '480p' ? '标准' : res === '720p' ? '高清' : '超清' }}</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom bar -->
+          <div class="bv-bottom-bar">
+            <button class="bv-close-btn" @click="handleCloseBatchVideo" title="关闭">✕</button>
+
+            <n-dropdown :options="bvModelOptions" @select="onBvModelSelect" trigger="click">
+              <button class="bv-model-btn">
+                <n-icon :size="12"><VideocamOutline /></n-icon>
+                {{ bvDisplayModel }}
+                <n-icon :size="10"><ChevronDownOutline /></n-icon>
+              </button>
+            </n-dropdown>
+
+            <span class="bv-summary">
+              {{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }} · {{ bvDuration }}s ·
+              <n-icon :size="11"><component :is="bvAudio ? VolumeHighOutline : VolumeMuteOutline" /></n-icon>
+            </span>
+
+            <span class="bv-scene-count">全部 {{ localScenes.length }} 个分镜</span>
+
+            <button
+              class="bv-generate-btn"
+              :disabled="isGeneratingVideos || !localScenes.length"
+              @click="handleBatchGenerateVideos"
+            >
+              <n-spin v-if="isGeneratingVideos" :size="14" />
+              <template v-else>⚡ {{ bvCreditCost }} 生成视频</template>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>
@@ -337,7 +440,8 @@ import {
   DocumentTextOutline, ListOutline, AlertCircleOutline,
   RefreshOutline, GridOutline, ImageOutline,
   SparklesOutline, SendOutline, ChevronDownOutline,
-  ExpandOutline, CloseOutline, CopyOutline, TrashOutline
+  ExpandOutline, CloseOutline, CopyOutline, TrashOutline,
+  VideocamOutline, VolumeHighOutline, VolumeMuteOutline
 } from '@vicons/ionicons5'
 import {
   updateNode, removeNode, duplicateNode, addNode, addEdge, addNodes,
@@ -347,7 +451,8 @@ import {
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { streamChatCompletions } from '../../api/chat'
-import { DEFAULT_CHAT_MODEL } from '../../config/models'
+import { DEFAULT_CHAT_MODEL, VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../../config/models'
+import { useVideoGeneration } from '../../hooks'
 
 // ── 常量 ──────────────────────────────────────────────────────────────
 const PROMPT_PLACEHOLDER = '描述剧情或添加角色参考、视频参考等，为你生成分镜脚本'
@@ -638,7 +743,7 @@ const handleGenerate = async () => {
     if (err.name === 'AbortError') {
       updateNode(props.id, { status: 'idle' })
     } else {
-      console.info('[ScriptNode] 生成失败:', err.name, err.message, '\nfullText前200字符:', fullText?.slice(0, 200))
+      console.info('[ScriptNode] 生成失败:', err.name, err.message, '\nfullText:', fullText)
       updateNode(props.id, { status: 'error', scenes: [] })
       window.$message?.error(err.message || '生成失败')
     }
@@ -731,6 +836,266 @@ const onRowDrop = (toIdx) => {
   updateNode(props.id, { scenes: arr })
 }
 
+// ── Batch video generation ────────────────────────────────────────────
+
+// Video generation hook
+const { createVideoTaskOnly } = useVideoGeneration()
+
+// Batch video panel state
+const showBatchVideoPanel = ref(false)
+const isGeneratingVideos = ref(false)
+
+// Video generation settings
+const bvModel = ref(DEFAULT_VIDEO_MODEL)
+const bvRatio = ref('16:9')
+const bvResolution = ref('720p')
+const bvDuration = ref(5)
+const bvAudio = ref(true)
+
+// Available video models (only those supporting i2v or t2v+i2v)
+const bvModelOptions = computed(() =>
+  VIDEO_MODELS
+    .filter(m => m.type === 'i2v' || m.type === 't2v+i2v')
+    .map(m => ({ label: m.label, key: m.key }))
+)
+const bvDisplayModel = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.label?.replace(/\(.*\)/, '').trim() || bvModel.value
+})
+
+// Ratio options from selected model
+const bvRatioList = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.ratios || ['16:9', '1:1', '9:16']
+})
+
+// Resolution options from selected model
+const bvResolutionList = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.resolutions || SEEDANCE_RESOLUTION_OPTIONS.map(r => r.key)
+})
+
+// Duration options from selected model
+const bvDurList = computed(() => {
+  const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
+  return m?.durs || [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }]
+})
+
+// Credit cost estimate (rough: base 55 per video, ×2 for 10s, ×1.5 for 1080p, ×1.2 for audio)
+const bvCreditCost = computed(() => {
+  const sceneCount = localScenes.value.length
+  let perVideo = 55
+  if (bvDuration.value >= 10) perVideo *= 2
+  if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
+  else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
+  if (bvAudio.value) perVideo = Math.ceil(perVideo * 1.2)
+  return sceneCount * perVideo
+})
+
+// Sync ratio/resolution/duration when model changes
+watch(bvModel, (key) => {
+  const m = VIDEO_MODELS.find(x => x.key === key)
+  if (m?.defaultParams) {
+    bvRatio.value = m.defaultParams.ratio || '16:9'
+    bvDuration.value = m.defaultParams.duration || 5
+  }
+  if (m?.defaultResolution) bvResolution.value = m.defaultResolution
+})
+
+const onBvModelSelect = (key) => { bvModel.value = key }
+
+// Open batch video panel — focus canvas on the storyboard group
+const handleOpenBatchVideo = () => {
+  showBatchVideoPanel.value = true
+}
+
+const handleCloseBatchVideo = () => {
+  showBatchVideoPanel.value = false
+}
+
+/**
+ * Batch generate videos:
+ * 1. Find all imageConfig nodes in the storyboard group
+ * 2. Collect their generated images + videoMotionPrompt from scenes
+ * 3. Create a new group of video nodes to the right
+ * 4. Fire all video generation tasks in parallel
+ */
+const handleBatchGenerateVideos = async () => {
+  if (isGeneratingVideos.value || !localScenes.value.length) return
+  isGeneratingVideos.value = true
+
+  try {
+    // Find the storyboard group created by this script node
+    const scriptOutputEdges = edges.value.filter(e => e.source === props.id && e.sourceHandle === 'script-output')
+    let storyboardGroupId = null
+    let storyboardNodes = []
+
+    for (const edge of scriptOutputEdges) {
+      const proxyNode = nodes.value.find(n => n.id === edge.target && n.type === 'groupProxy')
+      if (proxyNode) {
+        const g = canvasGroups.value.find(grp => grp.memberIds?.includes(proxyNode.id))
+        if (g) {
+          storyboardGroupId = g.id
+          storyboardNodes = g.memberIds
+            .map(mid => nodes.value.find(n => n.id === mid))
+            .filter(n => n && n.type === 'imageConfig')
+          break
+        }
+      }
+    }
+
+    if (storyboardNodes.length === 0) {
+      window.$message?.warning('请先生成分镜图')
+      isGeneratingVideos.value = false
+      return
+    }
+
+    // Sort by position (left-to-right, top-to-bottom)
+    storyboardNodes.sort((a, b) => {
+      const rowA = Math.floor(a.position.y / 200)
+      const rowB = Math.floor(b.position.y / 200)
+      if (rowA !== rowB) return rowA - rowB
+      return a.position.x - b.position.x
+    })
+
+    // Collect image URLs and prompts per scene
+    const sceneData = storyboardNodes.map((node, i) => {
+      const scene = localScenes.value[i] || {}
+      const imageUrl = node.data?.generatedUrls?.[node.data?.mainImageIndex || 0]
+        || node.data?.generatedUrls?.[0]
+        || node.data?.selectedUrl
+        || null
+      return {
+        nodeId: node.id,
+        imageUrl,
+        prompt: scene.videoMotionPrompt || scene.description || '',
+        label: `分镜视频 #${scene.sceneNo || (i + 1)}`
+      }
+    })
+
+    // Calculate position for video group (right of storyboard group)
+    const storyboardGroup = canvasGroups.value.find(g => g.id === storyboardGroupId)
+    const groupRight = storyboardGroup?.frame
+      ? storyboardGroup.frame.x + storyboardGroup.frame.width + 80
+      : (props.position?.x || 0) + 2200
+    const groupTop = storyboardGroup?.frame?.y || (props.position?.y || 0)
+
+    // Create video nodes in grid layout
+    const COLS = 5, NODE_W = 420, NODE_H = 320, GAP_X = 12, GAP_Y = 12
+
+    const videoNodeSpecs = sceneData.map((sd, i) => ({
+      type: 'video',
+      position: {
+        x: groupRight + (i % COLS) * (NODE_W + GAP_X),
+        y: groupTop + Math.floor(i / COLS) * (NODE_H + GAP_Y)
+      },
+      data: {
+        url: '',
+        loading: true,
+        label: sd.label,
+        model: bvModel.value
+      }
+    }))
+
+    startBatchOperation()
+    const videoNodeIds = addNodes(videoNodeSpecs, false)
+    endBatchOperation()
+
+    await new Promise(r => setTimeout(r, 150))
+
+    // Create group for video nodes
+    let videoGroupId = null
+    if (videoNodeIds.length >= 2) {
+      videoGroupId = addCanvasGroup(videoNodeIds)
+      if (videoGroupId) updateCanvasGroup(videoGroupId, { label: '视频组 · 分镜图 · 脚本生成器' })
+    }
+
+    // Create proxy node and connect storyboard group → video group
+    if (videoGroupId) {
+      const vg = canvasGroups.value.find(x => x.id === videoGroupId)
+      if (vg?.frame) {
+        const proxyId = addNode('groupProxy', {
+          x: vg.frame.x,
+          y: vg.frame.y + vg.frame.height / 2 - 6
+        }, {})
+        updateCanvasGroup(videoGroupId, { memberIds: [...(vg.memberIds || []), proxyId] })
+
+        // Find storyboard group's proxy to connect from
+        const sbProxy = scriptOutputEdges.map(e => e.target).find(tid => {
+          const n = nodes.value.find(x => x.id === tid && x.type === 'groupProxy')
+          return !!n
+        })
+        if (sbProxy) {
+          addEdge({
+            source: sbProxy,
+            target: proxyId,
+            sourceHandle: 'right',
+            targetHandle: 'left',
+            type: 'default'
+          })
+        }
+      }
+    }
+
+    // Close panel & show success
+    showBatchVideoPanel.value = false
+    window.$message?.success(`正在生成 ${videoNodeIds.length} 个分镜视频…`)
+
+    // Fire all video generation tasks in parallel (each independent)
+    videoNodeIds.forEach(async (videoNodeId, i) => {
+      const sd = sceneData[i]
+      try {
+        const params = {
+          model: bvModel.value,
+          ratio: bvRatio.value,
+          dur: bvDuration.value,
+          resolution: bvResolution.value,
+          generateAudio: bvAudio.value
+        }
+        if (sd.prompt) params.prompt = sd.prompt
+        // First frame = current scene image, Last frame = next scene image
+        if (sd.imageUrl) params.first_frame_image = sd.imageUrl
+        const nextScene = sceneData[i + 1]
+        if (nextScene?.imageUrl) params.last_frame_image = nextScene.imageUrl
+
+        const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
+
+        if (url) {
+          updateNode(videoNodeId, {
+            url,
+            loading: false,
+            label: sd.label,
+            model: bvModel.value,
+            updatedAt: Date.now()
+          })
+        } else if (newTaskId) {
+          updateNode(videoNodeId, {
+            taskId: newTaskId,
+            loading: true,
+            label: sd.label,
+            model: bvModel.value,
+            updatedAt: Date.now()
+          })
+        }
+      } catch (err) {
+        updateNode(videoNodeId, {
+          loading: false,
+          error: err.message || '生成失败',
+          label: sd.label,
+          updatedAt: Date.now()
+        })
+      }
+    })
+
+    // Store reference to video group for this script node
+    updateNode(props.id, { videoGroupId })
+  } catch (err) {
+    window.$message?.error('批量视频生成失败：' + err.message)
+  } finally {
+    isGeneratingVideos.value = false
+  }
+}
+
 // ── Watchers ───────────────────────────────────────────────────────────
 watch(status, () => nextTick(() => updateNodeInternals(props.id)))
 watch(() => localScenes.value.length, () => nextTick(() => updateNodeInternals(props.id)))
@@ -747,4 +1112,169 @@ onUnmounted(() => { abortCtrl?.abort() })
 .script-node-wrapper {
   position: relative;
 }
+
+/* ─── Batch video panel ──────────────────────────────────────────────── */
+.bv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,0.3);
+}
+.bv-panel {
+  width: 100%;
+  max-width: 800px;
+  margin-bottom: 24px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(30,30,35,0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+}
+.bv-settings {
+  padding: 20px 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.bv-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bv-section-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
+}
+.bv-hint {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  cursor: help;
+}
+.bv-option-row {
+  display: flex;
+  gap: 8px;
+}
+.bv-option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.65);
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 72px;
+}
+.bv-option-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.9);
+}
+.bv-option-btn.active {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.35);
+  color: white;
+  font-weight: 500;
+}
+
+/* Ratio icons */
+.bv-ratio-icon {
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+.ratio-16x9 { width: 16px; height: 9px; }
+.ratio-1x1  { width: 12px; height: 12px; }
+.ratio-9x16 { width: 9px;  height: 16px; }
+.ratio-4x3  { width: 14px; height: 10px; }
+.ratio-3x4  { width: 10px; height: 14px; }
+.ratio-21x9 { width: 18px; height: 8px; }
+
+/* Bottom bar */
+.bv-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(20,20,25,0.6);
+}
+.bv-close-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.bv-close-btn:hover { background: rgba(255,255,255,0.12); color: white; }
+.bv-model-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.bv-model-btn:hover { background: rgba(255,255,255,0.14); }
+.bv-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  white-space: nowrap;
+}
+.bv-scene-count {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  white-space: nowrap;
+  margin-left: auto;
+}
+.bv-generate-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.bv-generate-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.bv-generate-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; filter: none; }
+
+/* Panel transition */
+.bv-panel-enter-active { transition: all 0.25s ease-out; }
+.bv-panel-leave-active { transition: all 0.2s ease-in; }
+.bv-panel-enter-from { opacity: 0; transform: translateY(40px); }
+.bv-panel-leave-to { opacity: 0; transform: translateY(40px); }
 </style>

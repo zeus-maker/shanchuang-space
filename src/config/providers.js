@@ -42,63 +42,45 @@ export const PROVIDERS = {
       video: (params) => {
         const model = params.model || ''
 
-        // Seedance 模型 - 使用 content 数组格式
+        // Seedance 模型 — 使用 content 数组 + 顶层参数格式
+        // 参考: https://www.volcengine.com/docs/82379/1520757
         if (model.includes('seedance')) {
           const content = []
 
-          // 构建完整参数文本
-          // 格式: prompt --resolution 720p --ratio 16:9 --dur 5 --fps 24 --wm true --seed 11 --cf false
-          let textPrompt = params.prompt || ''
+          content.push({ type: 'text', text: params.prompt || '' })
 
-          // 添加 resolution 参数
-          if (params.resolution) {
-            textPrompt += ` --resolution ${params.resolution}`
-          }
-
-          // 添加 ratio 参数 (图生视频用 16:9)
-          if (params.size) {
-            textPrompt += ` --ratio ${params.size}`
-          }
-
-          // 添加 duration 参数
-          if (params.seconds) {
-            textPrompt += ` --dur ${params.seconds}`
-          }
-
-          // 添加 fps (固定 24)
-          textPrompt += ` --fps 24`
-
-          // 添加水印参数 (默认 true)
-          textPrompt += ` --wm ${params.wm !== false ? 'true' : 'false'}`
-
-          // 添加 seed 参数 (可选)
-          if (params.seed !== undefined) {
-            textPrompt += ` --seed ${params.seed}`
-          }
-
-          // 添加 cf 参数 (默认 false)
-          textPrompt += ` --cf ${params.cf === true ? 'true' : 'false'}`
-
-          content.push({
-            type: 'text',
-            text: textPrompt
-          })
-
-          // 添加参考图（如果有）
+          // 首帧图 (role: first_frame)
           if (params.first_frame_image) {
+            const entry = {
+              type: 'image_url',
+              image_url: { url: params.first_frame_image }
+            }
+            if (params.last_frame_image) entry.role = 'first_frame'
+            content.push(entry)
+          }
+
+          // 尾帧图 (role: last_frame)
+          if (params.last_frame_image) {
             content.push({
               type: 'image_url',
-              image_url: {
-                url: params.first_frame_image
-              }
+              image_url: { url: params.last_frame_image },
+              role: 'last_frame'
             })
           }
 
           const adapted = {
             model: model,
             content: content,
-            generate_audio: params.generateAudio !== false
+            generate_audio: params.generateAudio !== undefined ? !!params.generateAudio : true
           }
+
+          // 顶层参数（优先于 text 内 --flag，兼容火山引擎 Ark 和 Chatfire）
+          if (params.resolution) adapted.resolution = params.resolution
+          if (params.size) adapted.ratio = params.size
+          if (params.seconds) adapted.duration = Number(params.seconds)
+          if (params.seed !== undefined) adapted.seed = params.seed
+          if (params.wm !== undefined) adapted.watermark = !!params.wm
+          if (params.cf !== undefined) adapted.camerafixed = !!params.cf
 
           return adapted
         }

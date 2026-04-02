@@ -45,50 +45,116 @@
       </div>
 
       <!-- Image preview area -->
-      <div class="icn-preview">
-        <!-- Single image -->
-        <template v-if="previewImages.length === 1">
-          <img :src="previewImages[0]" class="icn-preview-img" alt="生成结果" />
-        </template>
-
-        <!-- Multiple images grid (n > 1) -->
-        <template v-else-if="previewImages.length > 1">
-          <div class="icn-preview-grid" :class="`icn-grid-${previewImages.length}`">
-            <img
-              v-for="(url, i) in previewImages"
-              :key="i"
-              :src="url"
-              class="icn-preview-grid-img"
-              :alt="`生成结果 ${i + 1}`"
-            />
+      <div
+        class="icn-preview"
+        :class="{
+          'icn-preview-stack': previewImages.length > 1 && !isGridExpanded,
+          'icn-preview-grid-mode': isGridExpanded
+        }"
+      >
+        <!-- Empty / placeholder state -->
+        <template v-if="previewImages.length === 0 && !loading">
+          <div class="icn-preview-empty">
+            <n-icon :size="40" class="icn-empty-icon"><ImageOutline /></n-icon>
+          </div>
+          <div class="icn-try-actions">
+            <span class="icn-try-label">尝试:</span>
+            <button class="icn-try-btn" @click.stop="handleImg2Img">
+              <n-icon :size="11"><ImagesOutline /></n-icon>图生图
+            </button>
+            <button class="icn-try-btn" @click.stop="handleUpscale">
+              <n-icon :size="11"><ExpandOutline /></n-icon>图片高清
+            </button>
           </div>
         </template>
 
-        <!-- Placeholder -->
-        <div v-else class="icn-preview-empty">
-          <n-icon :size="40" class="icn-empty-icon"><ImageOutline /></n-icon>
-        </div>
+        <!-- Single image -->
+        <template v-else-if="previewImages.length === 1 && !loading">
+          <img :src="previewImages[0]" class="icn-preview-img" alt="生成结果" />
+          <div class="icn-regen-overlay">
+            <button class="icn-regen-btn" @click.stop="handleGenerate" title="重新生成">
+              <n-icon :size="14"><RefreshOutline /></n-icon>重新生成
+            </button>
+          </div>
+        </template>
 
-        <!-- Quick action hints (only when no image and not loading) -->
-        <div v-if="previewImages.length === 0 && !loading" class="icn-try-actions">
-          <span class="icn-try-label">尝试:</span>
-          <button class="icn-try-btn" @click.stop="handleImg2Img">
-            <n-icon :size="11"><ImagesOutline /></n-icon>图生图
-          </button>
-          <button class="icn-try-btn" @click.stop="handleUpscale">
-            <n-icon :size="11"><ExpandOutline /></n-icon>图片高清
-          </button>
-        </div>
+        <!-- Multiple images: stacked collapsed view -->
+        <template v-else-if="previewImages.length > 1 && !isGridExpanded && !loading">
+          <!-- Back cards (slightly offset, showing depth) -->
+          <div
+            v-for="offset in Math.min(previewImages.length - 1, 2)"
+            :key="`back-${offset}`"
+            class="icn-stack-back"
+            :style="{
+              zIndex: offset,
+              transform: `translate(${offset * 6}px, ${offset * -6}px) scale(${1 - offset * 0.025})`
+            }"
+          >
+            <img
+              :src="previewImages[(mainImageIndex + offset) % previewImages.length]"
+              class="icn-stack-img"
+              alt=""
+            />
+          </div>
+          <!-- Front card: main image -->
+          <div class="icn-stack-front" style="z-index: 10">
+            <img :src="previewImages[mainImageIndex]" class="icn-stack-img" alt="主图" />
+            <!-- Count badge -->
+            <div class="icn-stack-count">
+              <n-icon :size="10"><ImagesOutline /></n-icon>
+              {{ previewImages.length }}张
+            </div>
+            <!-- Regenerate button -->
+            <button class="icn-stack-regen" @click.stop="handleGenerate" title="重新生成">
+              <n-icon :size="12"><RefreshOutline /></n-icon>
+            </button>
+            <!-- Expand button -->
+            <button class="icn-stack-expand-btn" @click.stop="expandGrid" title="展开全部">
+              <n-icon :size="12"><ExpandOutline /></n-icon>
+              展开
+            </button>
+          </div>
+        </template>
 
-        <!-- Regenerate overlay on hover (when image exists) -->
-        <div v-if="previewImages.length > 0 && !loading" class="icn-regen-overlay">
-          <button class="icn-regen-btn" @click.stop="handleGenerate" title="重新生成">
-            <n-icon :size="14"><RefreshOutline /></n-icon>
-            重新生成
-          </button>
-        </div>
+        <!-- Multiple images: expanded grid -->
+        <template v-else-if="previewImages.length > 1 && isGridExpanded">
+          <div class="icn-multi-grid">
+            <div
+              v-for="(url, i) in previewImages"
+              :key="i"
+              class="icn-multi-item"
+              :class="{ 'is-main': i === mainImageIndex }"
+            >
+              <img :src="url" class="icn-multi-img" :alt="`生成结果 ${i + 1}`" />
+              <!-- Action buttons overlay -->
+              <div class="icn-multi-actions">
+                <button class="icn-multi-btn" @click.stop="downloadImage(url, i)" title="下载">
+                  <n-icon :size="11"><DownloadOutline /></n-icon>下载
+                </button>
+                <button
+                  v-if="i !== mainImageIndex"
+                  class="icn-multi-btn icn-multi-btn-primary"
+                  @click.stop="setMainImage(i)"
+                >
+                  设为主图
+                </button>
+                <button
+                  v-else
+                  class="icn-multi-btn"
+                  @click.stop="collapseGrid"
+                >
+                  收起
+                </button>
+              </div>
+              <!-- Main image mark -->
+              <div v-if="i === mainImageIndex" class="icn-multi-main-mark">
+                <n-icon :size="12"><CheckmarkCircleOutline /></n-icon>主图
+              </div>
+            </div>
+          </div>
+        </template>
 
-        <!-- Loading overlay -->
+        <!-- Loading overlay (always on top) -->
         <div v-if="loading" class="icn-loading-overlay">
           <n-spin :size="28" />
           <span class="icn-loading-text">生成中…</span>
@@ -332,7 +398,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NDropdown, NSpin } from 'naive-ui'
 import {
-  ChevronDownOutline, CopyOutline, TrashOutline, ImageOutline, RefreshOutline,
+  ChevronDownOutline, CopyOutline, TrashOutline, ImageOutline, RefreshOutline, DownloadOutline,
   CloudUploadOutline, ImagesOutline, ExpandOutline, ColorPaletteOutline,
   BookmarkOutline, ScanOutline, LibraryOutline, VideocamOutline,
   OptionsOutline, FlashOutline, SendOutline, SwapVerticalOutline,
@@ -568,6 +634,51 @@ const creditCost = computed(() => {
 const previewImages = computed(() => props.data?.generatedUrls || (props.data?.generatedUrl ? [props.data.generatedUrl] : []))
 const previewImageUrl = computed(() => previewImages.value[0] || null)
 const previewCurrentIndex = ref(0)
+
+// ─── Multi-image management ───────────────────────────────────────────────────
+
+// Which image is the "main" (selected) image; 0-indexed
+const mainImageIndex = ref(props.data?.mainImageIndex ?? 0)
+// Whether the expanded grid is open
+const isGridExpanded = ref(false)
+
+const setMainImage = (i) => {
+  mainImageIndex.value = i
+  const url = previewImages.value[i]
+  // Store as selectedUrl so downstream nodes can read it
+  updateNode(props.id, { mainImageIndex: i, selectedUrl: url })
+}
+
+const expandGrid = () => {
+  isGridExpanded.value = true
+  nextTick(() => updateNodeInternals(props.id))
+}
+
+const collapseGrid = () => {
+  isGridExpanded.value = false
+  nextTick(() => updateNodeInternals(props.id))
+}
+
+const downloadImage = (url, index) => {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `image-${props.id}-${index + 1}.png`
+  a.target = '_blank'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+// Keep mainImageIndex in range when images change
+watch(() => props.data?.generatedUrls, (urls) => {
+  if (urls && urls.length > 0 && mainImageIndex.value >= urls.length) {
+    mainImageIndex.value = 0
+  }
+  // Initialize selectedUrl with first image when new batch is generated
+  if (urls && urls.length > 0 && !props.data?.selectedUrl) {
+    updateNode(props.id, { selectedUrl: urls[mainImageIndex.value] })
+  }
+})
 
 // ─── Node menu operations ─────────────────────────────────────────────────────
 
@@ -852,6 +963,7 @@ const handleGenerate = async () => {
   // Clear previous results and mark as generating
   updateNode(props.id, { generatedUrls: [], generateError: null })
   previewCurrentIndex.value = 0
+  mainImageIndex.value = 0
 
   try {
     const params = {
@@ -861,13 +973,26 @@ const handleGenerate = async () => {
       quality: localQuality.value,
       n: localCount.value || 1
     }
+    console.log('[ImageConfigNode] 生成参数:', { model: params.model, size: params.size, quality: params.quality, n: params.n })
     if (refImages.length > 0) params.image = refImages
 
     const result = await generate(params)
 
     if (result && result.length > 0) {
       const urls = result.map(r => r.url).filter(Boolean)
-      updateNode(props.id, { generatedUrls: urls, executed: true, updatedAt: Date.now() })
+      updateNode(props.id, {
+        generatedUrls: urls,
+        selectedUrl: urls[0],
+        mainImageIndex: 0,
+        executed: true,
+        updatedAt: Date.now()
+      })
+      mainImageIndex.value = 0
+      // Auto-expand grid when multiple images generated
+      if (urls.length > 1) {
+        isGridExpanded.value = true
+        nextTick(() => updateNodeInternals(props.id))
+      }
     }
     window.$message?.success('图片生成成功')
   } catch (err) {
@@ -929,6 +1054,17 @@ onMounted(() => {
   if (!localModel.value || !isAvailable) {
     localModel.value = modelStore.selectedImageModel || available[0]?.key || DEFAULT_IMAGE_MODEL
     updateNode(props.id, { model: localModel.value })
+  }
+  // Ensure localSize is valid for the current model
+  const validSizes = getModelSizeOptions(localModel.value, localQuality.value)
+  if (validSizes.length > 0) {
+    const isValidSize = validSizes.some(o => o.key === localSize.value)
+    if (!isValidSize) {
+      const cfg = getModelConfig(localModel.value)
+      const defaultSize = cfg?.defaultParams?.size || validSizes[Math.floor(validSizes.length / 2)]?.key || validSizes[0].key
+      localSize.value = defaultSize
+      updateNode(props.id, { size: defaultSize })
+    }
   }
 })
 </script>
@@ -1065,23 +1201,179 @@ onMounted(() => {
 }
 .icn-try-btn:hover { background: rgba(0,0,0,0.55); color: var(--text-primary); }
 
-/* ─── Multi-image grid ────────────────────────────────────────────────────── */
-.icn-preview-grid {
+/* ─── Multi-image: stacked view ──────────────────────────────────────────── */
+.icn-preview-stack {
+  position: relative;
+  /* slightly taller to show stack depth */
+  padding: 10px 10px 0 10px;
+  background: transparent;
+}
+/* Back cards */
+.icn-stack-back {
+  position: absolute;
+  inset: 10px 10px 0 10px;
+  border-radius: 6px;
+  overflow: hidden;
+  transform-origin: center bottom;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.icn-stack-img {
   width: 100%;
   height: 100%;
-  display: grid;
-  gap: 2px;
+  object-fit: cover;
+  display: block;
+  border-radius: 6px;
 }
-.icn-grid-2 { grid-template-columns: 1fr 1fr; }
-.icn-grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-.icn-preview-grid-img {
+/* Front card */
+.icn-stack-front {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/10;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.icn-stack-front > .icn-stack-img { border-radius: 6px; }
+/* Count badge */
+.icn-stack-count {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  color: white;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.15);
+  pointer-events: none;
+}
+/* Regenerate icon button (top-right of stack) */
+.icn-stack-regen {
+  position: absolute;
+  top: 8px;
+  right: 48px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  backdrop-filter: blur(6px);
+}
+.icn-stack-front:hover .icn-stack-regen { opacity: 1; }
+.icn-stack-regen:hover { background: rgba(0,0,0,0.8); color: white; }
+/* Expand button (bottom-center of stack) */
+.icn-stack-expand-btn {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  color: white;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.12s;
+  white-space: nowrap;
+}
+.icn-stack-front:hover .icn-stack-expand-btn { opacity: 1; }
+.icn-stack-expand-btn:hover { background: rgba(0,0,0,0.75); }
+
+/* ─── Multi-image: expanded grid ─────────────────────────────────────────── */
+.icn-preview-grid-mode {
+  aspect-ratio: unset !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0;
+}
+.icn-multi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: 100%;
+}
+.icn-multi-item {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: rgba(0,0,0,0.3);
+}
+.icn-multi-item.is-main {
+  outline: 2px solid var(--accent-color, #4f9eff);
+  outline-offset: -2px;
+}
+.icn-multi-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
+/* Action overlay per image */
+.icn-multi-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.icn-multi-item:hover .icn-multi-actions { opacity: 1; }
+.icn-multi-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  color: white;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.icn-multi-btn:hover { background: rgba(0,0,0,0.85); }
+.icn-multi-btn-primary { background: rgba(79,158,255,0.75); border-color: rgba(79,158,255,0.5); }
+.icn-multi-btn-primary:hover { background: rgba(79,158,255,0.95); }
+/* Main image mark (bottom-left) */
+.icn-multi-main-mark {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 12px;
+  font-size: 10px;
+  color: #4f9eff;
+  background: rgba(0,0,20,0.7);
+  border: 1px solid rgba(79,158,255,0.4);
+  pointer-events: none;
+}
 
-/* ─── Regenerate overlay (hover) ─────────────────────────────────────────── */
+/* ─── Single-image regenerate overlay (hover) ────────────────────────────── */
 .icn-regen-overlay {
   position: absolute;
   inset: 0;
@@ -1125,6 +1417,7 @@ onMounted(() => {
   gap: 8px;
   background: rgba(0,0,0,0.5);
   backdrop-filter: blur(2px);
+  z-index: 20;
 }
 .icn-loading-text { font-size: 12px; color: rgba(255,255,255,0.8); }
 
