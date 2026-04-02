@@ -7,9 +7,9 @@
       :class="[
         data.selected ? 'border-1 border-blue-500 shadow-lg shadow-blue-500/20' : 'border border-[var(--border-color)]',
         showVideoEditPanel ? 'w-[460px]' : 'w-[400px]',
-        showVideoPromptPanel && !showVideoEditPanel ? 'cursor-pointer' : ''
+        canExpandVideoEdit && !showVideoEditPanel ? 'cursor-pointer' : ''
       ]"
-      @click.stop="onNodeClick"
+      @click.stop="openVideoEdit"
     >
     <!-- Header | 头部 -->
     <div class="px-3 py-2 border-b border-[var(--border-color)]">
@@ -43,7 +43,7 @@
         </div>
       </div>
       <!-- 模型 key：折叠态显示；展开后改在底部规格区展示 -->
-      <div v-if="data.model && (!showVideoPromptPanel || !showVideoEditPanel)" class="mt-1 text-xs text-[var(--text-secondary)] truncate">
+      <div v-if="data.model && (!canExpandVideoEdit || !showVideoEditPanel)" class="mt-1 text-xs text-[var(--text-secondary)] truncate">
         {{ data.model }}
       </div>
     </div>
@@ -133,12 +133,20 @@
               全屏预览
             </n-tooltip>
           </div>
-          <div class="aspect-video overflow-hidden">
+          <div class="aspect-video overflow-hidden relative">
             <video
               :src="displayVideoSrc"
               controls
               class="w-full h-full object-contain"
               @error="onVideoLoadError"
+            />
+            <!-- 折叠时盖住 video：原生 controls 会吞点击，导致无法触发展开 -->
+            <button
+              v-if="canExpandVideoEdit && !isExpanded"
+              type="button"
+              class="absolute inset-0 z-[6] w-full h-full cursor-pointer border-0 bg-transparent p-0"
+              aria-label="展开编辑"
+              @click.stop="openVideoEdit"
             />
           </div>
         </div>
@@ -165,10 +173,10 @@
 
       <!-- 折叠态提示（与 ImageConfig 点击展开一致） -->
       <div
-        v-if="showVideoPromptPanel && !showVideoEditPanel"
+        v-if="canExpandVideoEdit && !showVideoEditPanel"
         class="mt-2 rounded-lg border border-dashed border-[var(--border-color)] bg-[var(--bg-tertiary)]/60 px-2 py-2 text-center text-xs text-[var(--text-tertiary)]"
       >
-        点击节点展开：提示词、模型与重新生成
+        点击画面或节点展开：提示词、模型与重新生成
       </div>
 
       <!-- 分镜视频：参考设计稿的完整编辑面板（文生/图生、首帧、规格、重新生成） -->
@@ -396,7 +404,8 @@ import {
   getModelRatioOptions,
   getModelDurationOptions,
   getModelResolutionOptions,
-  getModelConfig
+  getModelConfig,
+  DEFAULT_VIDEO_MODEL
 } from '../../stores/models'
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import {
@@ -501,10 +510,11 @@ watch(
   }
 )
 
-const showVideoPromptPanel = computed(() => {
+/** 任意已生成完成的视频均可展开编辑（含轮询完成但未写入 videoGenParams 的旧节点） */
+const canExpandVideoEdit = computed(() => {
   const d = props.data || {}
   if (!d.url || d.error || d.loading || d.taskId) return false
-  return !!(d.videoGenParams || d.videoMotionPrompt !== undefined)
+  return true
 })
 
 const hasFirstFrame = computed(() =>
@@ -512,30 +522,63 @@ const hasFirstFrame = computed(() =>
 )
 
 watch(
-  () => [hasFirstFrame.value, showVideoPromptPanel.value],
+  () => [hasFirstFrame.value, canExpandVideoEdit.value],
   ([hasFf, show]) => {
     if (show && !hasFf && activeEditTab.value === 'i2v') activeEditTab.value = 't2v'
   }
 )
 
-/** 同时具备分镜编辑数据且已展开 */
+/** 可展开且已展开 */
 const showVideoEditPanel = computed(() =>
-  showVideoPromptPanel.value && isExpanded.value
+  canExpandVideoEdit.value && isExpanded.value
 )
 
-watch(showVideoPromptPanel, (ok) => {
-  if (!ok) isExpanded.value = false
-})
+watch(
+  () => canExpandVideoEdit.value,
+  (ok) => {
+    if (!ok) isExpanded.value = false
+  }
+)
 
-const onNodeClick = () => {
-  if (showVideoPromptPanel.value) isExpanded.value = true
+/** 补全 videoGenParams / videoMotionPrompt，供下拉与重新生成使用 */
+function ensureVideoGenDefaults () {
+  const d = props.data || {}
+  const p = d.videoGenParams
+  const paramsReady = p && typeof p === 'object' && p.model
+  if (paramsReady) {
+    if (d.videoMotionPrompt === undefined) {
+      updateNode(props.id, { videoMotionPrompt: '' })
+    }
+    return
+  }
+  const model = d.model || DEFAULT_VIDEO_MODEL
+  const cfg = getModelConfig(model)
+  updateNode(props.id, {
+    videoGenParams: {
+      model,
+      ratio: cfg?.defaultParams?.ratio || '16:9',
+      dur: cfg?.defaultParams?.duration ?? 5,
+      resolution: cfg?.defaultResolution || '720p',
+      generateAudio: true
+    },
+    videoMotionPrompt: d.videoMotionPrompt ?? ''
+  })
+}
+
+function openVideoEdit () {
+  if (!canExpandVideoEdit.value) return
+  ensureVideoGenDefaults()
+  isExpanded.value = true
 }
 
 let videoEditCollapseTimer = null
 watch(() => props.selected, (sel) => {
   clearTimeout(videoEditCollapseTimer)
   if (sel) {
-    if (showVideoPromptPanel.value) isExpanded.value = true
+    if (canExpandVideoEdit.value) {
+      ensureVideoGenDefaults()
+      isExpanded.value = true
+    }
   } else {
     videoEditCollapseTimer = setTimeout(() => {
       isExpanded.value = false

@@ -6,10 +6,11 @@
 
 ## 修改点
 
-- `VideoNode.vue` 增加 `selected` prop 与本地 `isExpanded`；具备 `videoGenParams` / `videoMotionPrompt` 的完成态节点默认仅显示预览与简短引导文案。
-- 点击节点卡片（`@click.stop`）或节点被选中时展开完整编辑面板；取消选中约 80ms 后收起（与 `ImageConfigNode` 一致）。
-- 无分镜元数据的普通视频节点行为不变；`videoGenParams` 消失时强制收起。
+- `VideoNode.vue` 增加 `selected` prop 与本地 `isExpanded`；**任意**已有成片地址且非加载/错误/任务中的节点均可展开（不再要求先有 `videoGenParams`）。
+- 首次展开时 `ensureVideoGenDefaults()`：若无 `videoGenParams` 则按当前 `data.model` 与模型配置写入默认比例/时长/分辨率/配音，并补 `videoMotionPrompt` 空串。
+- 折叠态在 `<video>` 上覆盖透明 `button`，避免原生 controls 吞掉点击导致无法展开。
+- 点击节点卡片（`openVideoEdit`）或节点被选中时展开；取消选中约 80ms 后收起（与 `ImageConfigNode` 一致）。
 
 ## 复盘
 
-头部复制/删除区域增加 `@click.stop`，避免与节点级点击逻辑冲突；编辑区内 `@click.stop` / `@mousedown.stop` 减少误触画布失焦。
+头部复制/删除区域增加 `@click.stop`；编辑区内 `@click.stop` / `@mousedown.stop` 减少误触画布失焦。轮询完成写回节点时若未带 `videoGenParams`，旧逻辑会把整段编辑区判为不可用，已消除。
