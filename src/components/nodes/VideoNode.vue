@@ -165,6 +165,31 @@
           @change="handleFileUpload"
         />
       </div>
+
+      <!-- 图生首帧参考图：折叠/加载/文生 Tab 时也展示，便于对照 -->
+      <div
+        v-if="hasFirstFrameUrl"
+        class="mt-2 flex gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 p-2"
+        @click.stop
+        @mousedown.stop
+      >
+        <span class="text-[11px] font-medium text-[var(--text-tertiary)] shrink-0 pt-0.5 w-9">首帧</span>
+        <div class="min-w-0 flex-1 flex justify-center">
+          <img
+            v-if="firstFrameThumbUrl"
+            :src="firstFrameThumbUrl"
+            alt="图生视频首帧参考"
+            class="max-h-[min(140px,28vh)] w-full max-w-[320px] rounded-md object-contain border border-[var(--border-color)] bg-black/[0.04] dark:bg-white/[0.06]"
+            @error="onFirstFrameImgError"
+          />
+          <div
+            v-else
+            class="flex h-[100px] w-full max-w-[320px] items-center justify-center rounded-md border border-dashed border-amber-500/40 text-[11px] text-[var(--text-tertiary)]"
+          >
+            预览失败（可展开后在图生内更换图片）
+          </div>
+        </div>
+      </div>
       
       <!-- Duration info | 时长信息 -->
       <div v-if="data.duration" class="mt-2 text-xs text-[var(--text-secondary)]">
