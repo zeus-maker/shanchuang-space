@@ -104,6 +104,32 @@
       <div v-if="data.duration" class="mt-2 text-xs text-[var(--text-secondary)]">
         时长: {{ formatDuration(data.duration) }}
       </div>
+
+      <!-- 分镜视频：可编辑图生视频提示词与重新生成（参考批量分镜视频节点交互） -->
+      <div
+        v-if="showVideoPromptPanel"
+        class="mt-3 pt-3 border-t border-[var(--border-color)] space-y-2"
+      >
+        <div class="text-xs font-medium text-[var(--text-secondary)]">图生视频提示词</div>
+        <n-input
+          v-model:value="promptDraft"
+          type="textarea"
+          placeholder="用于图生视频的镜头/运动描述（如来自脚本表格「视频运动提示词」）"
+          :autosize="{ minRows: 2, maxRows: 6 }"
+          size="small"
+          class="text-xs"
+          @blur="savePromptDraft"
+        />
+        <n-button
+          v-if="canRegenerateFromFrames"
+          size="small"
+          block
+          :loading="isRegenerating"
+          @click="confirmRegenerateVideo"
+        >
+          用当前提示词重新生成
+        </n-button>
+      </div>
     </div>
 
     <!-- Handles | 连接点 -->
@@ -143,7 +169,7 @@
  */
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
-import { NIcon, NSpin } from 'naive-ui'
+import { NIcon, NSpin, NInput, NButton, useDialog } from 'naive-ui'
 import { TrashOutline, ExpandOutline, VideocamOutline, CopyOutline, CloseCircleOutline, DownloadOutline, EyeOutline, CreateOutline } from '@vicons/ionicons5'
 import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, currentProjectId } from '../../stores/canvas'
 import { useVideoGeneration } from '../../hooks/useApi'
@@ -163,8 +189,10 @@ const props = defineProps({
 // Vue Flow instance
 const { updateNodeInternals } = useVueFlow()
 
+const dialog = useDialog()
+
 // Get pollVideoTask from useVideoGeneration | 从 useVideoGeneration 获取轮询函数
-const { pollVideoTask, fetchVideoResultUrlOnce } = useVideoGeneration()
+const { pollVideoTask, fetchVideoResultUrlOnce, createVideoTaskOnly } = useVideoGeneration()
 
 const displayVideoSrc = computed(() => {
   const d = props.data || {}
@@ -190,6 +218,111 @@ const operations = [
 
 // Polling state | 轮询状态
 const isPolling = ref(false)
+
+// 分镜视频：提示词编辑与重新生成
+const promptDraft = ref('')
+const isRegenerating = ref(false)
+
+watch(
+  () => [props.id, props.data?.videoMotionPrompt],
+  () => {
+    promptDraft.value = props.data?.videoMotionPrompt ?? ''
+  },
+  { immediate: true }
+)
+
+const showVideoPromptPanel = computed(() => {
+  const d = props.data || {}
+  if (!d.url || d.error || d.loading || d.taskId) return false
+  // 批量分镜视频节点带 videoGenParams；旧节点仅有 url 时不展示该区块以免干扰纯上传
+  return !!(d.videoGenParams || d.videoMotionPrompt !== undefined)
+})
+
+const canRegenerateFromFrames = computed(() =>
+  !!(props.data?.videoGenParams?.first_frame_image && !isRegenerating.value)
+)
+
+const savePromptDraft = () => {
+  const next = String(promptDraft.value ?? '')
+  const cur = String(props.data?.videoMotionPrompt ?? '')
+  if (next !== cur) updateNode(props.id, { videoMotionPrompt: next })
+}
+
+const confirmRegenerateVideo = () => {
+  dialog.warning({
+    title: '重新生成视频',
+    content: '将使用当前提示词与保存的首帧/尾帧发起新任务，生成完成后替换当前画面。',
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      void runRegenerateVideo()
+      return true
+    }
+  })
+}
+
+async function runRegenerateVideo () {
+  savePromptDraft()
+  const p = props.data?.videoGenParams
+  const prompt = String(promptDraft.value || props.data?.videoMotionPrompt || '').trim()
+  if (!p?.first_frame_image) {
+    window.$message?.warning('缺少首帧图，无法重新生成')
+    return
+  }
+  if (!prompt) {
+    window.$message?.warning('请填写图生视频提示词')
+    return
+  }
+  isRegenerating.value = true
+  try {
+    updateNode(props.id, {
+      loading: true,
+      error: null,
+      url: '',
+      taskId: null,
+      localVideoKey: undefined,
+      sourceVideoUrl: undefined,
+      videoTaskId: undefined,
+      progress: 0
+    })
+    const params = {
+      model: p.model,
+      ratio: p.ratio,
+      dur: p.dur,
+      resolution: p.resolution,
+      generateAudio: p.generateAudio,
+      prompt,
+      first_frame_image: p.first_frame_image,
+      last_frame_image: p.last_frame_image
+    }
+    const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
+    updateNode(props.id, { videoMotionPrompt: prompt })
+    if (url) {
+      const mediaPatch = await patchVideoNodeFromRemoteUrl(currentProjectId.value, url, null)
+      updateNode(props.id, {
+        ...mediaPatch,
+        loading: false,
+        taskId: null,
+        progress: 100
+      })
+      window.$message?.success('视频重新生成成功')
+    } else if (newTaskId) {
+      updateNode(props.id, {
+        taskId: newTaskId,
+        loading: true
+      })
+    }
+  } catch (err) {
+    updateNode(props.id, {
+      loading: false,
+      error: err.message || '重新生成失败',
+      taskId: null
+    })
+    window.$message?.error(err.message || '重新生成失败')
+  } finally {
+    isRegenerating.value = false
+  }
+}
 
 // Watch for taskId changes and start polling | 监听 taskId 变化并开始轮询
 watch(() => props.data?.taskId, (taskId) => {
@@ -228,7 +361,7 @@ const startPolling = async (taskId) => {
       ...patch,
       loading: false,
       progress: 100,
-      label: '视频生成',
+      label: props.data?.label || '视频生成',
       taskId: null
     })
     window.$message?.success('视频生成成功')

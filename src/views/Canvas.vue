@@ -504,6 +504,7 @@ import {
 } from '@vicons/ionicons5'
 import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds, applyCanvasGroupFrameDelta, currentProjectId } from '../stores/canvas'
 import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
+import { resolveVideoI2vPrompt, resolveSceneForStoryboardImageNode } from '@/utils/storyboardVideoPrompt'
 import { loadAllModels } from '../stores/models'
 import { useChat, useVideoGeneration, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
 import { VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../config/models'
@@ -1221,25 +1222,43 @@ const handleAutoStitchVideos = async () => {
   }
 }
 
+/** 从分镜图组解析关联的脚本 scenes（组内代理 → 脚本；无代理时尝试 script-output 直连组内节点） */
 const findScriptScenesForGroup = (groupId) => {
   const g = canvasGroups.value.find(x => x.id === groupId)
   if (!g) return []
+
   const proxyInGroup = g.memberIds.find(mid => {
     const n = nodes.value.find(x => x.id === mid)
     return n?.type === 'groupProxy'
   })
-  if (!proxyInGroup) return []
-  const inEdge = edges.value.find(e => e.target === proxyInGroup)
-  if (!inEdge) return []
-  const srcProxy = nodes.value.find(n => n.id === inEdge.source && n.type === 'groupProxy')
-  if (!srcProxy) {
-    const scriptNode = nodes.value.find(n => n.id === inEdge.source && n.type === 'script')
-    return scriptNode?.data?.scenes || []
+  if (proxyInGroup) {
+    const inEdge = edges.value.find(e => e.target === proxyInGroup)
+    if (inEdge) {
+      const srcProxy = nodes.value.find(n => n.id === inEdge.source && n.type === 'groupProxy')
+      let scriptNode = null
+      if (!srcProxy) {
+        scriptNode = nodes.value.find(n => n.id === inEdge.source && n.type === 'script')
+      } else {
+        const scriptEdge = edges.value.find(e => e.target === srcProxy.id)
+        if (scriptEdge) scriptNode = nodes.value.find(n => n.id === scriptEdge.source && n.type === 'script')
+      }
+      if (scriptNode?.data?.scenes?.length) return scriptNode.data.scenes
+    }
   }
-  const scriptEdge = edges.value.find(e => e.target === srcProxy?.id || e.target === inEdge.source)
-  if (!scriptEdge) return []
-  const scriptNode = nodes.value.find(n => n.id === scriptEdge.source && n.type === 'script')
-  return scriptNode?.data?.scenes || []
+
+  for (const e of edges.value) {
+    if (e.sourceHandle !== 'script-output') continue
+    const scriptNode = nodes.value.find(n => n.id === e.source && n.type === 'script')
+    if (!scriptNode?.data?.scenes?.length) continue
+    const tid = e.target
+    if (g.memberIds.includes(tid)) return scriptNode.data.scenes
+    const tnode = nodes.value.find(n => n.id === tid)
+    if (tnode?.type === 'groupProxy') {
+      const grp = canvasGroups.value.find(grp => grp.memberIds?.includes(tid))
+      if (grp?.id === groupId) return scriptNode.data.scenes
+    }
+  }
+  return []
 }
 
 const handleBatchGenerateVideos = async () => {
@@ -1258,15 +1277,16 @@ const handleBatchGenerateVideos = async () => {
     const scenes = findScriptScenesForGroup(storyboardGroupId)
 
     const sceneData = storyboardNodes.map((node, i) => {
-      const scene = scenes[i] || {}
+      const scene = resolveSceneForStoryboardImageNode(node, scenes, i)
       const imageUrl = node.data?.generatedUrls?.[node.data?.mainImageIndex || 0]
         || node.data?.generatedUrls?.[0]
         || node.data?.selectedUrl
         || null
+      const prompt = resolveVideoI2vPrompt(node, scenes, i)
       return {
         nodeId: node.id,
         imageUrl,
-        prompt: scene.videoMotionPrompt || scene.description || '',
+        prompt,
         label: `分镜视频 #${scene.sceneNo || (i + 1)}`
       }
     })
@@ -1284,7 +1304,22 @@ const handleBatchGenerateVideos = async () => {
         x: groupRight + (i % COLS) * (NODE_W + GAP_X),
         y: groupTop + Math.floor(i / COLS) * (NODE_H + GAP_Y)
       },
-      data: { url: '', loading: true, label: sd.label, model: bvModel.value }
+      data: {
+        url: '',
+        loading: true,
+        label: sd.label,
+        model: bvModel.value,
+        videoMotionPrompt: sd.prompt,
+        videoGenParams: {
+          model: bvModel.value,
+          ratio: bvRatio.value,
+          dur: bvDuration.value,
+          resolution: bvResolution.value,
+          generateAudio: bvAudio.value,
+          first_frame_image: sd.imageUrl || undefined,
+          last_frame_image: sceneData[i + 1]?.imageUrl || undefined
+        }
+      }
     }))
 
     startBatchOperation()

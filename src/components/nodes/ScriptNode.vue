@@ -461,6 +461,7 @@ import {
   parseScriptJSON,
   repairStoryboardJsonViaLlm
 } from '@/utils/scriptStoryboard'
+import { resolveVideoI2vPrompt, resolveSceneForStoryboardImageNode } from '@/utils/storyboardVideoPrompt'
 
 // ── 常量 ──────────────────────────────────────────────────────────────
 const PROMPT_PLACEHOLDER = '描述剧情或添加角色参考、视频参考等，为你生成分镜脚本'
@@ -725,7 +726,9 @@ const handleGenerateStoryboard = async () => {
       },
       data: {
         prompt: scene.storyboardPrompt || scene.description,
-        label: `分镜 #${scene.sceneNo}`
+        label: `分镜 #${scene.sceneNo}`,
+        sceneNo: scene.sceneNo,
+        videoMotionPrompt: scene.videoMotionPrompt || ''
       }
     }))
 
@@ -905,17 +908,18 @@ const handleBatchGenerateVideos = async () => {
       return a.position.x - b.position.x
     })
 
-    // Collect image URLs and prompts per scene
+    // Collect image URLs and prompts per scene（镜号对齐 + 视频运动提示词优先）
     const sceneData = storyboardNodes.map((node, i) => {
-      const scene = localScenes.value[i] || {}
+      const scene = resolveSceneForStoryboardImageNode(node, localScenes.value, i)
       const imageUrl = node.data?.generatedUrls?.[node.data?.mainImageIndex || 0]
         || node.data?.generatedUrls?.[0]
         || node.data?.selectedUrl
         || null
+      const prompt = resolveVideoI2vPrompt(node, localScenes.value, i)
       return {
         nodeId: node.id,
         imageUrl,
-        prompt: scene.videoMotionPrompt || scene.description || '',
+        prompt,
         label: `分镜视频 #${scene.sceneNo || (i + 1)}`
       }
     })
@@ -940,7 +944,17 @@ const handleBatchGenerateVideos = async () => {
         url: '',
         loading: true,
         label: sd.label,
-        model: bvModel.value
+        model: bvModel.value,
+        videoMotionPrompt: sd.prompt,
+        videoGenParams: {
+          model: bvModel.value,
+          ratio: bvRatio.value,
+          dur: bvDuration.value,
+          resolution: bvResolution.value,
+          generateAudio: bvAudio.value,
+          first_frame_image: sd.imageUrl || undefined,
+          last_frame_image: sceneData[i + 1]?.imageUrl || undefined
+        }
       }
     }))
 
