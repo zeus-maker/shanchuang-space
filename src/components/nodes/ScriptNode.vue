@@ -461,7 +461,12 @@ import {
   parseScriptJSON,
   repairStoryboardJsonViaLlm
 } from '@/utils/scriptStoryboard'
-import { resolveVideoI2vPrompt, resolveSceneForStoryboardImageNode } from '@/utils/storyboardVideoPrompt'
+import {
+  resolveVideoI2vPrompt,
+  resolveSceneForStoryboardImageNode,
+  pickStoryboardImageUrlFromNode,
+  resolveI2vFirstFrameFromStoryboardGroup
+} from '@/utils/storyboardVideoPrompt'
 
 // ── 常量 ──────────────────────────────────────────────────────────────
 const PROMPT_PLACEHOLDER = '描述剧情或添加角色参考、视频参考等，为你生成分镜脚本'
@@ -911,16 +916,17 @@ const handleBatchGenerateVideos = async () => {
     // Collect image URLs and prompts per scene（镜号对齐 + 视频运动提示词优先）
     const sceneData = storyboardNodes.map((node, i) => {
       const scene = resolveSceneForStoryboardImageNode(node, localScenes.value, i)
-      const imageUrl = node.data?.generatedUrls?.[node.data?.mainImageIndex || 0]
-        || node.data?.generatedUrls?.[0]
-        || node.data?.selectedUrl
-        || null
+      const imageUrl = pickStoryboardImageUrlFromNode(node)
+      const firstFrameUrl = resolveI2vFirstFrameFromStoryboardGroup(storyboardNodes, i)
       const prompt = resolveVideoI2vPrompt(node, localScenes.value, i)
+      const sceneNo = scene.sceneNo ?? (i + 1)
       return {
         nodeId: node.id,
         imageUrl,
+        firstFrameUrl,
         prompt,
-        label: `分镜视频 #${scene.sceneNo || (i + 1)}`
+        sceneNo,
+        label: `分镜视频 #${sceneNo}`
       }
     })
 
@@ -945,6 +951,7 @@ const handleBatchGenerateVideos = async () => {
         loading: true,
         label: sd.label,
         model: bvModel.value,
+        sceneNo: sd.sceneNo,
         videoMotionPrompt: sd.prompt,
         videoGenParams: {
           model: bvModel.value,
@@ -952,8 +959,8 @@ const handleBatchGenerateVideos = async () => {
           dur: bvDuration.value,
           resolution: bvResolution.value,
           generateAudio: bvAudio.value,
-          first_frame_image: sd.imageUrl || undefined,
-          last_frame_image: sceneData[i + 1]?.imageUrl || undefined
+          first_frame_image: sd.firstFrameUrl || undefined,
+          last_frame_image: pickStoryboardImageUrlFromNode(storyboardNodes[i + 1]) || undefined
         }
       }
     }))
@@ -1014,10 +1021,10 @@ const handleBatchGenerateVideos = async () => {
           generateAudio: bvAudio.value
         }
         if (sd.prompt) params.prompt = sd.prompt
-        // First frame = current scene image, Last frame = next scene image
-        if (sd.imageUrl) params.first_frame_image = sd.imageUrl
-        const nextScene = sceneData[i + 1]
-        if (nextScene?.imageUrl) params.last_frame_image = nextScene.imageUrl
+        if (sd.firstFrameUrl) params.first_frame_image = sd.firstFrameUrl
+        const nextShot = storyboardNodes[i + 1]
+        const nextUrl = nextShot ? pickStoryboardImageUrlFromNode(nextShot) : null
+        if (nextUrl) params.last_frame_image = nextUrl
 
         const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
 

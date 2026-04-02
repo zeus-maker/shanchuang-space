@@ -227,32 +227,50 @@
             </template>
             运镜
           </n-tooltip>
-          <div class="relative shrink-0">
-            <img
-              v-if="firstFrameThumbUrl"
-              :src="firstFrameThumbUrl"
-              alt="首帧"
-              class="w-14 h-14 rounded-md object-cover border border-[var(--border-color)] bg-[var(--bg-tertiary)]"
-              @error="onFirstFrameImgError"
+          <div class="relative shrink-0 group/ff">
+            <input
+              ref="firstFrameFileRef"
+              type="file"
+              accept="image/*"
+              class="absolute w-0 h-0 opacity-0 pointer-events-none overflow-hidden"
+              aria-hidden="true"
+              @change="onFirstFrameFileChange"
             />
-            <div
-              v-else-if="hasFirstFrameUrl"
-              class="w-14 h-14 rounded-md border border-dashed border-amber-500/40 flex items-center justify-center text-[10px] text-[var(--text-tertiary)] text-center px-0.5 leading-tight"
+            <button
+              type="button"
+              class="relative block p-0 border-0 bg-transparent cursor-pointer rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)]"
+              title="点击更换首帧图"
+              @click.stop="triggerFirstFrameFilePick"
             >
-              预览失败
-            </div>
-            <div
-              v-else
-              class="w-14 h-14 rounded-md border border-dashed border-[var(--border-color)] flex items-center justify-center text-[10px] text-[var(--text-tertiary)]"
-            >
-              无首帧
-            </div>
+              <img
+                v-if="firstFrameThumbUrl"
+                :src="firstFrameThumbUrl"
+                alt="首帧"
+                class="w-14 h-14 rounded-md object-cover border border-[var(--border-color)] bg-[var(--bg-tertiary)]"
+                @error="onFirstFrameImgError"
+              />
+              <div
+                v-else-if="hasFirstFrameUrl"
+                class="w-14 h-14 rounded-md border border-dashed border-amber-500/40 flex items-center justify-center text-[10px] text-[var(--text-tertiary)] text-center px-0.5 leading-tight"
+              >
+                预览失败
+              </div>
+              <div
+                v-else
+                class="w-14 h-14 rounded-md border border-dashed border-[var(--border-color)] flex items-center justify-center text-[10px] text-[var(--text-tertiary)]"
+              >
+                上传首帧
+              </div>
+              <span
+                class="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-[10px] text-white font-medium opacity-0 group-hover/ff:opacity-100 transition-opacity pointer-events-none"
+              >更换</span>
+            </button>
             <span
               v-if="hasFirstFrameUrl"
               class="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] px-0.5 flex items-center justify-center rounded bg-[var(--accent-color)] text-[10px] text-white font-medium"
             >1</span>
           </div>
-          <span class="text-[11px] text-[var(--text-tertiary)] leading-snug">首帧图用于图生视频；可在提示词中描述镜头与动态。</span>
+          <span class="text-[11px] text-[var(--text-tertiary)] leading-snug">首帧默认来自上一分镜图；可点击缩略图替换上传。</span>
         </div>
 
         <n-input
@@ -313,13 +331,14 @@
               <template #trigger>
                 <button
                   type="button"
-                  class="p-1.5 rounded-md hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]"
-                  @click="copyPromptToClipboard"
+                  class="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-md hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]"
+                  @click="togglePromptLocale"
                 >
                   <n-icon :size="18"><LanguageOutline /></n-icon>
+                  <span class="text-[10px] font-semibold tabular-nums w-[22px] text-center">{{ promptLocale === 'zh' ? '中' : 'EN' }}</span>
                 </button>
               </template>
-              复制当前提示词
+              {{ promptLocale === 'zh' ? '当前为中文提示词，点击切换英文' : '当前为英文提示词，点击切换中文' }}
             </n-tooltip>
             <span class="text-[11px] text-[var(--text-tertiary)] whitespace-nowrap">1 个</span>
             <span class="text-xs text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">⚡ {{ editCreditCost }}</span>
@@ -403,7 +422,7 @@ import {
   LanguageOutline,
   ArrowUpOutline
 } from '@vicons/ionicons5'
-import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, currentProjectId } from '../../stores/canvas'
+import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, edges, canvasGroups, currentProjectId } from '../../stores/canvas'
 import { useVideoGeneration } from '../../hooks/useApi'
 import { useModelStore } from '../../stores/pinia'
 import {
@@ -420,6 +439,12 @@ import {
   mediaFileUrlFromKey
 } from '@/utils/localMediaServer'
 import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
+import { findScriptScenesForGroup, findCanvasGroupIdContainingNode } from '@/utils/storyboardGroupScenes'
+import {
+  resolveSceneForVideoNodeData,
+  resolveVideoPromptZhFromScene,
+  resolveVideoPromptEnFromScene
+} from '@/utils/storyboardVideoPrompt'
 
 const props = defineProps({
   id: String,
@@ -471,6 +496,9 @@ const i2vPromptDraft = ref('')
 const t2vPromptDraft = ref('')
 const isRegenerating = ref(false)
 const firstFrameImgBroken = ref(false)
+const firstFrameFileRef = ref(null)
+/** 与节点 data.videoPromptLocale 同步；默认英文（与脚本 videoMotion 字段习惯一致） */
+const promptLocale = ref('en')
 
 const editModel = ref('')
 const editRatio = ref('16:9')
@@ -479,17 +507,47 @@ const editResolution = ref('720p')
 const editAudio = ref(true)
 
 watch(
-  () => [props.id, props.data?.videoMotionPrompt],
-  () => {
-    i2vPromptDraft.value = props.data?.videoMotionPrompt ?? ''
+  () => props.data?.videoPromptLocale,
+  (v) => {
+    promptLocale.value = v === 'zh' ? 'zh' : 'en'
   },
   { immediate: true }
 )
 
 watch(
-  () => [props.id, props.data?.t2vPrompt],
+  () => [
+    props.id,
+    props.data?.videoMotionPrompt,
+    props.data?.videoMotionPromptZh,
+    props.data?.videoMotionPromptEn,
+    props.data?.videoPromptLocale
+  ],
   () => {
-    t2vPromptDraft.value = props.data?.t2vPrompt ?? ''
+    const loc = props.data?.videoPromptLocale === 'zh' ? 'zh' : 'en'
+    if (loc === 'zh') {
+      i2vPromptDraft.value = props.data?.videoMotionPromptZh ?? props.data?.videoMotionPrompt ?? ''
+    } else {
+      i2vPromptDraft.value = props.data?.videoMotionPromptEn ?? props.data?.videoMotionPrompt ?? ''
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [
+    props.id,
+    props.data?.t2vPrompt,
+    props.data?.t2vPromptZh,
+    props.data?.t2vPromptEn,
+    props.data?.videoPromptLocale
+  ],
+  () => {
+    const loc = props.data?.videoPromptLocale === 'zh' ? 'zh' : 'en'
+    if (loc === 'zh') {
+      t2vPromptDraft.value = props.data?.t2vPromptZh ?? props.data?.t2vPrompt ?? ''
+    } else {
+      t2vPromptDraft.value = props.data?.t2vPromptEn ?? props.data?.t2vPrompt ?? ''
+    }
   },
   { immediate: true }
 )
@@ -710,28 +768,105 @@ function onEditAudioChange (v) {
 function saveCurrentPromptDraft () {
   if (activeEditTab.value === 'i2v') {
     const next = String(i2vPromptDraft.value ?? '')
-    if (next !== String(props.data?.videoMotionPrompt ?? '')) {
-      updateNode(props.id, { videoMotionPrompt: next })
+    const patch = promptLocale.value === 'zh'
+      ? { videoMotionPromptZh: next, videoMotionPrompt: next }
+      : { videoMotionPromptEn: next, videoMotionPrompt: next }
+    const curSide = promptLocale.value === 'zh'
+      ? String(props.data?.videoMotionPromptZh ?? '')
+      : String(props.data?.videoMotionPromptEn ?? '')
+    if (next !== curSide || next !== String(props.data?.videoMotionPrompt ?? '')) {
+      updateNode(props.id, patch)
     }
   } else {
     const next = String(t2vPromptDraft.value ?? '')
-    if (next !== String(props.data?.t2vPrompt ?? '')) {
-      updateNode(props.id, { t2vPrompt: next })
+    const patch = promptLocale.value === 'zh'
+      ? { t2vPromptZh: next, t2vPrompt: next }
+      : { t2vPromptEn: next, t2vPrompt: next }
+    const curSide = promptLocale.value === 'zh'
+      ? String(props.data?.t2vPromptZh ?? '')
+      : String(props.data?.t2vPromptEn ?? '')
+    if (next !== curSide || next !== String(props.data?.t2vPrompt ?? '')) {
+      updateNode(props.id, patch)
     }
   }
 }
 
-function copyPromptToClipboard () {
-  const text = currentRegenPrompt.value || currentPromptDraft.value
-  if (!text) {
-    window.$message?.warning('暂无提示词可复制')
+function getLinkedScriptScenes () {
+  const gid = findCanvasGroupIdContainingNode(canvasGroups.value, props.id)
+  if (!gid) return []
+  return findScriptScenesForGroup(nodes.value, edges.value, canvasGroups.value, gid)
+}
+
+function togglePromptLocale () {
+  const curTab = activeEditTab.value
+  const draft = curTab === 'i2v' ? String(i2vPromptDraft.value ?? '') : String(t2vPromptDraft.value ?? '')
+  const loc = promptLocale.value
+  if (curTab === 'i2v') {
+    if (loc === 'zh') {
+      updateNode(props.id, { videoMotionPromptZh: draft, videoMotionPrompt: draft })
+    } else {
+      updateNode(props.id, { videoMotionPromptEn: draft, videoMotionPrompt: draft })
+    }
+  } else {
+    if (loc === 'zh') {
+      updateNode(props.id, { t2vPromptZh: draft, t2vPrompt: draft })
+    } else {
+      updateNode(props.id, { t2vPromptEn: draft, t2vPrompt: draft })
+    }
+  }
+
+  const next = loc === 'zh' ? 'en' : 'zh'
+  promptLocale.value = next
+  updateNode(props.id, { videoPromptLocale: next })
+
+  nextTick(() => {
+    const n = nodes.value.find(x => x.id === props.id)
+    const d = n?.data || props.data || {}
+    const scene = resolveSceneForVideoNodeData(d, getLinkedScriptScenes())
+    if (curTab === 'i2v') {
+      if (next === 'zh') {
+        i2vPromptDraft.value = String(d.videoMotionPromptZh || '').trim()
+          || resolveVideoPromptZhFromScene(scene)
+          || String(d.videoMotionPrompt || '')
+      } else {
+        i2vPromptDraft.value = String(d.videoMotionPromptEn || '').trim()
+          || resolveVideoPromptEnFromScene(scene)
+          || String(d.videoMotionPrompt || '')
+      }
+    } else if (next === 'zh') {
+      t2vPromptDraft.value = String(d.t2vPromptZh || '').trim()
+        || resolveVideoPromptZhFromScene(scene)
+        || String(d.t2vPrompt || '')
+    } else {
+      t2vPromptDraft.value = String(d.t2vPromptEn || '').trim()
+        || resolveVideoPromptEnFromScene(scene)
+        || String(d.t2vPrompt || '')
+    }
+  })
+}
+
+function triggerFirstFrameFilePick () {
+  firstFrameFileRef.value?.click()
+}
+
+function onFirstFrameFileChange (event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !file.type.startsWith('image/')) {
+    if (file) window.$message?.warning('请选择图片文件')
     return
   }
-  void navigator.clipboard?.writeText(text).then(() => {
-    window.$message?.success('已复制提示词')
-  }).catch(() => {
-    window.$message?.error('复制失败')
-  })
+  const reader = new FileReader()
+  reader.onload = () => {
+    const dataUrl = reader.result
+    if (typeof dataUrl === 'string') {
+      firstFrameImgBroken.value = false
+      mergeVideoGenParams({ first_frame_image: dataUrl })
+      window.$message?.success('已更新首帧图')
+    }
+  }
+  reader.onerror = () => window.$message?.error('读取图片失败')
+  reader.readAsDataURL(file)
 }
 
 function onFirstFrameImgError () {
@@ -814,9 +949,15 @@ async function runRegenerateVideo () {
     }
     const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
     if (activeEditTab.value === 'i2v') {
-      updateNode(props.id, { videoMotionPrompt: prompt })
+      const patch = { videoMotionPrompt: prompt }
+      if (promptLocale.value === 'zh') patch.videoMotionPromptZh = prompt
+      else patch.videoMotionPromptEn = prompt
+      updateNode(props.id, patch)
     } else {
-      updateNode(props.id, { t2vPrompt: prompt })
+      const patch = { t2vPrompt: prompt }
+      if (promptLocale.value === 'zh') patch.t2vPromptZh = prompt
+      else patch.t2vPromptEn = prompt
+      updateNode(props.id, patch)
     }
     if (url) {
       const mediaPatch = await patchVideoNodeFromRemoteUrl(currentProjectId.value, url, null)
