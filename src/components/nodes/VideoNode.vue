@@ -1,13 +1,15 @@
 <template>
   <!-- Video node wrapper | 视频节点包裹层 -->
   <div class="video-node-wrapper relative" @mouseenter="showActions = true; showHandleMenu = true" @mouseleave="showActions = false; showHandleMenu = false">
-    <!-- Video node | 视频节点 -->
+    <!-- Video node | 视频节点（点击展开编辑区，对齐文生图配置节点交互） -->
     <div 
       class="video-node bg-[var(--bg-secondary)] rounded-xl border relative transition-all duration-200"
       :class="[
         data.selected ? 'border-1 border-blue-500 shadow-lg shadow-blue-500/20' : 'border border-[var(--border-color)]',
-        showVideoPromptPanel ? 'w-[460px]' : 'w-[400px]'
+        showVideoEditPanel ? 'w-[460px]' : 'w-[400px]',
+        showVideoPromptPanel && !showVideoEditPanel ? 'cursor-pointer' : ''
       ]"
+      @click.stop="onNodeClick"
     >
     <!-- Header | 头部 -->
     <div class="px-3 py-2 border-b border-[var(--border-color)]">
@@ -27,7 +29,7 @@
           @keydown.escape="cancelEditLabel"
           class="text-sm font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)] px-1 rounded outline-none border border-blue-500"
         />
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1" @click.stop>
           <button @click="handleDuplicate" class="p-1 hover:bg-[var(--bg-tertiary)] rounded transition-colors" title="复制节点">
             <n-icon :size="14">
               <CopyOutline />
@@ -40,8 +42,8 @@
           </button>
         </div>
       </div>
-      <!-- 模型 key（完整编辑面板打开时改在底部展示） -->
-      <div v-if="data.model && !showVideoPromptPanel" class="mt-1 text-xs text-[var(--text-secondary)] truncate">
+      <!-- 模型 key：折叠态显示；展开后改在底部规格区展示 -->
+      <div v-if="data.model && (!showVideoPromptPanel || !showVideoEditPanel)" class="mt-1 text-xs text-[var(--text-secondary)] truncate">
         {{ data.model }}
       </div>
     </div>
@@ -78,7 +80,7 @@
       <!-- Video preview | 视频预览 -->
       <div v-else-if="data.url" class="space-y-2">
         <div
-          v-if="showVideoPromptPanel"
+          v-if="showVideoEditPanel"
           class="flex items-center gap-1.5 text-sm font-medium text-[var(--text-primary)]"
         >
           <n-icon :size="18" class="text-[var(--accent-color)] shrink-0"><PlayCircleOutline /></n-icon>
@@ -87,7 +89,7 @@
         <div class="relative group/vid rounded-lg overflow-hidden bg-black">
           <!-- 参考图：预览区上方悬浮工具条 -->
           <div
-            v-if="showVideoPromptPanel"
+            v-if="showVideoEditPanel"
             class="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-black/55 backdrop-blur-sm border border-white/10 opacity-0 pointer-events-none group-hover/vid:pointer-events-auto group-hover/vid:opacity-100 transition-opacity duration-200"
           >
             <n-tooltip trigger="hover">
@@ -161,10 +163,20 @@
         时长: {{ formatDuration(data.duration) }}
       </div>
 
+      <!-- 折叠态提示（与 ImageConfig 点击展开一致） -->
+      <div
+        v-if="showVideoPromptPanel && !showVideoEditPanel"
+        class="mt-2 rounded-lg border border-dashed border-[var(--border-color)] bg-[var(--bg-tertiary)]/60 px-2 py-2 text-center text-xs text-[var(--text-tertiary)]"
+      >
+        点击节点展开：提示词、模型与重新生成
+      </div>
+
       <!-- 分镜视频：参考设计稿的完整编辑面板（文生/图生、首帧、规格、重新生成） -->
       <div
-        v-if="showVideoPromptPanel"
+        v-if="showVideoEditPanel"
         class="mt-3 pt-3 border-t border-[var(--border-color)] space-y-3"
+        @click.stop
+        @mousedown.stop
       >
         <div class="flex rounded-lg bg-[var(--bg-tertiary)] p-0.5 text-xs font-medium">
           <button
@@ -356,7 +368,7 @@
  * Video node component | 视频节点组件
  * Displays and manages video content
  */
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NSpin, NInput, useDialog, NTooltip, NDropdown, NSwitch } from 'naive-ui'
 import {
@@ -396,7 +408,9 @@ import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
 
 const props = defineProps({
   id: String,
-  data: Object
+  data: Object,
+  /** Vue Flow 节点选中态，用于与 ImageConfig 一致的展开/收起 */
+  selected: { type: Boolean, default: false }
 })
 
 // Vue Flow instance
@@ -432,6 +446,9 @@ const operations = [
 
 // Polling state | 轮询状态
 const isPolling = ref(false)
+
+/** 是否展开底部编辑区（分镜视频节点）；与 ImageConfigNode.isExpanded 行为对齐 */
+const isExpanded = ref(false)
 
 // 分镜视频：完整编辑面板状态
 const activeEditTab = ref('i2v')
@@ -500,6 +517,35 @@ watch(
     if (show && !hasFf && activeEditTab.value === 'i2v') activeEditTab.value = 't2v'
   }
 )
+
+/** 同时具备分镜编辑数据且已展开 */
+const showVideoEditPanel = computed(() =>
+  showVideoPromptPanel.value && isExpanded.value
+)
+
+watch(showVideoPromptPanel, (ok) => {
+  if (!ok) isExpanded.value = false
+})
+
+const onNodeClick = () => {
+  if (showVideoPromptPanel.value) isExpanded.value = true
+}
+
+let videoEditCollapseTimer = null
+watch(() => props.selected, (sel) => {
+  clearTimeout(videoEditCollapseTimer)
+  if (sel) {
+    if (showVideoPromptPanel.value) isExpanded.value = true
+  } else {
+    videoEditCollapseTimer = setTimeout(() => {
+      isExpanded.value = false
+    }, 80)
+  }
+})
+
+onUnmounted(() => {
+  clearTimeout(videoEditCollapseTimer)
+})
 
 const firstFrameThumbUrl = computed(() => {
   const u = props.data?.videoGenParams?.first_frame_image
