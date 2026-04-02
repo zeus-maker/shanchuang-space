@@ -57,9 +57,12 @@ pnpm install
 # 或
 npm install
 
-# 启动开发服务器
+# 启动开发服务器（含本地媒体缓存时推荐同时起 media server）
+pnpm dev:all
+# 或仅前端
 pnpm dev
 # 或
+npm run dev:all
 npm run dev
 ```
 
@@ -82,6 +85,15 @@ npm run build
 支持 OpenAI 兼容的 API 接口。
 
 **豆包 Seedream / Seedance 1.5 Pro（火山 Ark）：** 可将密钥写在项目根目录 `.env` 的 `VITE_VOLCENGINE_API_KEY`（参考 `.env.example`）。`VITE_VOLCENGINE_BASE_URL` 可只写到地域域名，缺少 `/api/v3` 时会自动补全，避免生图请求 404。修改后需重启开发服务；`.env` 勿提交仓库。
+
+### 本地媒体缓存（图片 / 视频落盘）
+
+火山等返回的素材链接常为短期签名 URL，刷新项目后会过期。仓库自带轻量 Node 服务 `server/index.mjs`，在生成成功后将远程文件下载到本地目录，**预览优先走本地**；本地文件缺失或播放失败时，会尝试用已保存的远程地址再次拉取，视频在仍无效时用 **`videoTaskId` 调查询接口** 换新链再缓存。
+
+- **开发**：终端一运行 `npm run server`（默认端口 `8787`，目录默认 `./uploads`），终端二 `npm run dev`；或一条命令 `npm run dev:all`。
+- **环境变量**：`MEDIA_ROOT` 指定存储根路径（默认项目根下 `uploads/`）；`MEDIA_SERVER_PORT` / `PORT` 控制监听端口。
+- **前端**：默认使用相对路径 `/api/media`（Vite 已代理到本机 8787）。若媒体服务在其它机器，设置 `VITE_MEDIA_API_URL` 为完整 origin。
+- **生产**：`npm run build` 后执行 `SERVE_STATIC=1 PORT=80 node server/index.mjs`（或 Docker 镜像内已配置 `SERVE_STATIC`），由同一进程提供 `/huobao-canvas` 静态资源与 `/api/media`。若仍用 **仅 Nginx** 托管静态文件，需把 `location /api/media/` 反代到本机 Node 服务（参见 `nginx.conf` 示例）。
 
 ## 🛠️ 技术栈
 

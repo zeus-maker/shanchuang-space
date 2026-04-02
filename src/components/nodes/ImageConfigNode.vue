@@ -70,7 +70,7 @@
 
         <!-- Single image -->
         <template v-else-if="previewImages.length === 1 && !loading">
-          <img :src="previewImages[0]" class="icn-preview-img" alt="生成结果" />
+          <img :src="previewImages[0]" class="icn-preview-img" alt="生成结果" @error="onPreviewImgError(0)" />
           <div class="icn-regen-overlay">
             <button class="icn-regen-btn" @click.stop="handleGenerate" title="重新生成">
               <n-icon :size="14"><RefreshOutline /></n-icon>重新生成
@@ -94,11 +94,12 @@
               :src="previewImages[(mainImageIndex + offset) % previewImages.length]"
               class="icn-stack-img"
               alt=""
+              @error="onPreviewImgError((mainImageIndex + offset) % previewImages.length)"
             />
           </div>
           <!-- Front card: main image -->
           <div class="icn-stack-front" style="z-index: 10">
-            <img :src="previewImages[mainImageIndex]" class="icn-stack-img" alt="主图" />
+            <img :src="previewImages[mainImageIndex]" class="icn-stack-img" alt="主图" @error="onPreviewImgError(mainImageIndex)" />
             <!-- Count badge -->
             <div class="icn-stack-count">
               <n-icon :size="10"><ImagesOutline /></n-icon>
@@ -125,7 +126,7 @@
               class="icn-multi-item"
               :class="{ 'is-main': i === mainImageIndex }"
             >
-              <img :src="url" class="icn-multi-img" :alt="`生成结果 ${i + 1}`" />
+              <img :src="url" class="icn-multi-img" :alt="`生成结果 ${i + 1}`" @error="onPreviewImgError(i)" />
               <!-- Action buttons overlay -->
               <div class="icn-multi-actions">
                 <button class="icn-multi-btn" @click.stop="downloadImage(url, i)" title="下载">
@@ -405,7 +406,13 @@ import {
   CloseOutline, HeartOutline, Heart, CheckmarkCircleOutline, ResizeOutline
 } from '@vicons/ionicons5'
 import { useImageGeneration } from '../../hooks'
-import { updateNode, addNode, addEdge, nodes, edges, duplicateNode, removeNode } from '../../stores/canvas'
+import { updateNode, addNode, addEdge, nodes, edges, duplicateNode, removeNode, currentProjectId } from '../../stores/canvas'
+import { cacheRemoteToServer, headLocalMedia } from '@/utils/localMediaServer'
+import {
+  buildImagePreviewUrls,
+  getGeneratedUrlList,
+  getGeneratedLocalKeys
+} from '@/utils/generatedMediaAssets'
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { getModelSizeOptions, getModelQualityOptions, getModelConfig, DEFAULT_IMAGE_MODEL } from '../../stores/models'
@@ -630,8 +637,8 @@ const creditCost = computed(() => {
   return base * localCount.value
 })
 
-// Preview: show images generated inline within this node
-const previewImages = computed(() => props.data?.generatedUrls || (props.data?.generatedUrl ? [props.data.generatedUrl] : []))
+// Preview: 优先本地 uploads，其次远程 URL（与 generatedUrls 对齐）
+const previewImages = computed(() => buildImagePreviewUrls(props.data))
 const previewImageUrl = computed(() => previewImages.value[0] || null)
 const previewCurrentIndex = ref(0)
 
@@ -644,9 +651,10 @@ const isGridExpanded = ref(false)
 
 const setMainImage = (i) => {
   mainImageIndex.value = i
-  const url = previewImages.value[i]
-  // Store as selectedUrl so downstream nodes can read it
-  updateNode(props.id, { mainImageIndex: i, selectedUrl: url })
+  const sources = getGeneratedUrlList(props.data)
+  const sourceUrl = sources[i] ?? sources[0] ?? ''
+  // 下游 API 仍使用远程 sourceUrl；预览用 previewImages（本地优先）
+  updateNode(props.id, { mainImageIndex: i, selectedUrl: sourceUrl })
 }
 
 const expandGrid = () => {
@@ -671,14 +679,43 @@ const downloadImage = (url, index) => {
 
 // Keep mainImageIndex in range when images change
 watch(() => props.data?.generatedUrls, (urls) => {
-  if (urls && urls.length > 0 && mainImageIndex.value >= urls.length) {
+  const list = Array.isArray(urls) ? urls : []
+  if (list.length > 0 && mainImageIndex.value >= list.length) {
     mainImageIndex.value = 0
   }
-  // Initialize selectedUrl with first image when new batch is generated
-  if (urls && urls.length > 0 && !props.data?.selectedUrl) {
-    updateNode(props.id, { selectedUrl: urls[mainImageIndex.value] })
+  if (list.length > 0 && !props.data?.selectedUrl) {
+    updateNode(props.id, { selectedUrl: list[mainImageIndex.value] })
   }
 })
+
+async function hydrateImageLocalFiles () {
+  const pid = currentProjectId.value
+  const urls = getGeneratedUrlList(props.data)
+  if (!pid || !urls.length) return
+  const keys = [...getGeneratedLocalKeys(props.data)]
+  let changed = false
+  for (let i = 0; i < urls.length; i++) {
+    if (keys[i] && (await headLocalMedia(keys[i]))) continue
+    const k = await cacheRemoteToServer(pid, urls[i], 'image')
+    if (k) {
+      keys[i] = k
+      changed = true
+    }
+  }
+  if (changed) updateNode(props.id, { generatedLocalKeys: keys })
+}
+
+const onPreviewImgError = async (index) => {
+  const pid = currentProjectId.value
+  const urls = getGeneratedUrlList(props.data)
+  const u = urls[index]
+  if (!pid || !u) return
+  const k = await cacheRemoteToServer(pid, u, 'image')
+  if (!k) return
+  const keys = [...getGeneratedLocalKeys(props.data)]
+  keys[index] = k
+  updateNode(props.id, { generatedLocalKeys: keys })
+}
 
 // ─── Node menu operations ─────────────────────────────────────────────────────
 
@@ -961,7 +998,7 @@ const handleGenerate = async () => {
   }
 
   // Clear previous results and mark as generating
-  updateNode(props.id, { generatedUrls: [], generateError: null })
+  updateNode(props.id, { generatedUrls: [], generatedLocalKeys: [], generateError: null })
   previewCurrentIndex.value = 0
   mainImageIndex.value = 0
 
@@ -980,8 +1017,13 @@ const handleGenerate = async () => {
 
     if (result && result.length > 0) {
       const urls = result.map(r => r.url).filter(Boolean)
+      const pid = currentProjectId.value
+      const localKeys = pid
+        ? await Promise.all(urls.map((u) => cacheRemoteToServer(pid, u, 'image')))
+        : urls.map(() => null)
       updateNode(props.id, {
         generatedUrls: urls,
+        generatedLocalKeys: localKeys,
         selectedUrl: urls[0],
         mainImageIndex: 0,
         executed: true,
@@ -1066,6 +1108,7 @@ onMounted(() => {
       updateNode(props.id, { size: defaultSize })
     }
   }
+  hydrateImageLocalFiles()
 })
 </script>
 

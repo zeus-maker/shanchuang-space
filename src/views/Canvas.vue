@@ -502,7 +502,8 @@ import {
   VolumeHighOutline,
   VolumeMuteOutline
 } from '@vicons/ionicons5'
-import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds, applyCanvasGroupFrameDelta } from '../stores/canvas'
+import { nodes, edges, addNode, addNodes, addEdge, addEdges, updateNode, initSampleData, loadProject, saveProject, clearCanvas, canvasViewport, updateViewport, undo, redo, canUndo, canRedo, manualSaveHistory, startBatchOperation, endBatchOperation, duplicateNodes, canvasGroups, addCanvasGroup, removeCanvasGroup, updateCanvasGroup, layoutGroupMembers, computeGroupBounds, applyCanvasGroupFrameDelta, currentProjectId } from '../stores/canvas'
+import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
 import { loadAllModels } from '../stores/models'
 import { useChat, useVideoGeneration, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
 import { VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../config/models'
@@ -1344,7 +1345,8 @@ const handleBatchGenerateVideos = async () => {
         const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
 
         if (url) {
-          updateNode(videoNodeId, { url, loading: false, label: sd.label, model: bvModel.value, updatedAt: Date.now() })
+          const mediaPatch = await patchVideoNodeFromRemoteUrl(currentProjectId.value, url, null)
+          updateNode(videoNodeId, { ...mediaPatch, loading: false, label: sd.label, model: bvModel.value, updatedAt: Date.now() })
         } else if (newTaskId) {
           updateNode(videoNodeId, { taskId: newTaskId, loading: true, label: sd.label, model: bvModel.value, updatedAt: Date.now() })
         }

@@ -20,6 +20,10 @@ export default defineConfig({
       '/v1': {
         target: 'https://api.chatfire.site',
         changeOrigin: true
+      },
+      '/api/media': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: true
       }
     }
   }

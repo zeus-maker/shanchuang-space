@@ -78,10 +78,11 @@
         v-else-if="data.url"
         class="aspect-video rounded-lg overflow-hidden bg-black"
       >
-        <video 
-          :src="data.url" 
-          controls 
+        <video
+          :src="displayVideoSrc"
+          controls
           class="w-full h-full object-contain"
+          @error="onVideoLoadError"
         />
       </div>
       <!-- Empty state | 空状态 -->
@@ -140,13 +141,19 @@
  * Video node component | 视频节点组件
  * Displays and manages video content
  */
-import { ref, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NSpin } from 'naive-ui'
 import { TrashOutline, ExpandOutline, VideocamOutline, CopyOutline, CloseCircleOutline, DownloadOutline, EyeOutline, CreateOutline } from '@vicons/ionicons5'
-import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes } from '../../stores/canvas'
+import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, currentProjectId } from '../../stores/canvas'
 import { useVideoGeneration } from '../../hooks/useApi'
 import NodeHandleMenu from './NodeHandleMenu.vue'
+import {
+  cacheRemoteToServer,
+  headLocalMedia,
+  mediaFileUrlFromKey
+} from '@/utils/localMediaServer'
+import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
 
 const props = defineProps({
   id: String,
@@ -157,7 +164,15 @@ const props = defineProps({
 const { updateNodeInternals } = useVueFlow()
 
 // Get pollVideoTask from useVideoGeneration | 从 useVideoGeneration 获取轮询函数
-const { pollVideoTask } = useVideoGeneration()
+const { pollVideoTask, fetchVideoResultUrlOnce } = useVideoGeneration()
+
+const displayVideoSrc = computed(() => {
+  const d = props.data || {}
+  if (d.localVideoKey) return mediaFileUrlFromKey(d.localVideoKey)
+  return d.url || ''
+})
+
+const mediaHydrateLock = ref(false)
 
 // Hover state | 悬浮状态
 const showActions = ref(false)
@@ -183,11 +198,13 @@ watch(() => props.data?.taskId, (taskId) => {
   }
 })
 
-// 页面刷新后恢复轮询 | Resume polling after page refresh
+// 页面刷新后恢复轮询 | Resume polling after page refresh；已完成的节点尝试从本地/刷新恢复媒体
 onMounted(() => {
   const { taskId, url } = props.data || {}
   if (taskId && !url && !isPolling.value) {
     startPolling(taskId)
+  } else if (url || props.data?.localVideoKey) {
+    hydrateVideoMedia('mount')
   }
 })
 
@@ -205,13 +222,14 @@ const startPolling = async (taskId) => {
         attempt
       })
     })
-    // 轮询成功，更新视频节点
+    const patch = await patchVideoNodeFromRemoteUrl(currentProjectId.value, result.url, taskId)
+    // 轮询成功：落盘本地并保留 videoTaskId 供后续刷新签名 URL
     updateNode(props.id, {
-      url: result.url,
+      ...patch,
       loading: false,
       progress: 100,
       label: '视频生成',
-      taskId: null  // 清除 taskId
+      taskId: null
     })
     window.$message?.success('视频生成成功')
   } catch (err) {
@@ -297,18 +315,77 @@ const handleDelete = () => {
   removeNode(props.id)
 }
 
+/** 本地文件缺失或远程过期时：先再拉远程，失败则用 taskId 查新链再缓存 */
+async function hydrateVideoMedia (reason = '') {
+  if (mediaHydrateLock.value) return
+  const pid = currentProjectId.value
+  const d = props.data || {}
+  if (!pid || (!d.url && !d.localVideoKey && !d.sourceVideoUrl)) return
+
+  mediaHydrateLock.value = true
+  try {
+    if (d.localVideoKey && (await headLocalMedia(d.localVideoKey))) {
+      const fixed = mediaFileUrlFromKey(d.localVideoKey)
+      if (d.url !== fixed) updateNode(props.id, { url: fixed })
+      return
+    }
+
+    const remoteTry = d.sourceVideoUrl || (String(d.url || '').startsWith('http') ? d.url : '')
+    if (remoteTry) {
+      const key = await cacheRemoteToServer(pid, remoteTry, 'video')
+      if (key) {
+        updateNode(props.id, {
+          localVideoKey: key,
+          sourceVideoUrl: remoteTry,
+          url: mediaFileUrlFromKey(key),
+          videoTaskId: d.videoTaskId,
+          error: null
+        })
+        return
+      }
+    }
+
+    if (d.videoTaskId && d.model) {
+      const fresh = await fetchVideoResultUrlOnce(d.videoTaskId, d.model)
+      if (fresh) {
+        const key = await cacheRemoteToServer(pid, fresh, 'video')
+        updateNode(props.id, {
+          sourceVideoUrl: fresh,
+          url: key ? mediaFileUrlFromKey(key) : fresh,
+          localVideoKey: key || undefined,
+          videoTaskId: d.videoTaskId,
+          error: null
+        })
+        return
+      }
+    }
+
+    if (reason === 'error') {
+      updateNode(props.id, {
+        error: d.error || '视频地址已失效且无法刷新，请重新生成'
+      })
+    }
+  } finally {
+    mediaHydrateLock.value = false
+  }
+}
+
+const onVideoLoadError = () => {
+  hydrateVideoMedia('error')
+}
+
 // Handle preview | 处理预览
 const handlePreview = () => {
-  if (props.data.url) {
-    window.open(props.data.url, '_blank')
-  }
+  const u = displayVideoSrc.value || props.data?.sourceVideoUrl || props.data?.url
+  if (u) window.open(u, '_blank')
 }
 
 // Handle download | 处理下载
 const handleDownload = () => {
-  if (props.data.url) {
+  const u = displayVideoSrc.value || props.data?.url
+  if (u) {
     const link = document.createElement('a')
-    link.href = props.data.url
+    link.href = u
     link.download = props.data.fileName || `video_${Date.now()}.mp4`
     document.body.appendChild(link)
     link.click()

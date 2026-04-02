@@ -149,7 +149,8 @@ import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NDropdown, NSpin } from 'naive-ui'
 import { ChevronForwardOutline, ChevronDownOutline, TrashOutline, VideocamOutline, CopyOutline, CreateOutline } from '@vicons/ionicons5'
 import { useVideoGeneration } from '../../hooks'
-import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, edges } from '../../stores/canvas'
+import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes, edges, currentProjectId } from '../../stores/canvas'
+import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { getModelRatioOptions, getModelDurationOptions, getModelConfig, DEFAULT_VIDEO_MODEL } from '../../stores/models'
@@ -434,8 +435,9 @@ const handleGenerate = async () => {
 
     // 如果有直接 URL，更新视频节点
     if (url) {
+      const mediaPatch = await patchVideoNodeFromRemoteUrl(currentProjectId.value, url, null)
       updateNode(videoNodeId, {
-        url: url,
+        ...mediaPatch,
         loading: false,
         label: '视频生成',
         model: localModel.value,

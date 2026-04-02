@@ -441,6 +441,72 @@ export const useVideoGeneration = () => {
   }
 
   /**
+   * 单次查询任务状态，取视频 URL（用于本地文件丢失后凭 taskId 刷新签名地址）
+   */
+  const fetchVideoResultUrlOnce = async (pollTaskId, modelName) => {
+    if (!pollTaskId || !modelName) return null
+    const videoProvider = usesVolcengineVideoApi(modelName) ? 'volcengine' : modelStore.currentProvider
+    const providerCfg = getProviderConfig(videoProvider)
+    const apiKey =
+      videoProvider === 'volcengine'
+        ? getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine || ''
+        : modelStore.apiKeysByProvider?.[videoProvider] || ''
+    if (!apiKey) return null
+
+    const baseUrl =
+      videoProvider === 'volcengine'
+        ? resolveVolcengineInferenceBase(modelStore)
+        : modelStore.baseUrlsByProvider?.[videoProvider] || getDefaultBaseUrl(videoProvider)
+
+    let taskEndpoint
+    let pollHeaders = {}
+
+    if (videoProvider === 'volcengine') {
+      const queryTpl = providerCfg.endpoints?.videoQuery || '/videos/{taskId}'
+      const taskPath = queryTpl.startsWith('/') ? queryTpl : `/${queryTpl}`
+      const endpointTemplate = `${String(baseUrl).replace(/\/$/, '')}${taskPath}`
+      taskEndpoint = endpointTemplate.includes('{taskId}')
+        ? endpointTemplate.replace('{taskId}', pollTaskId)
+        : endpointTemplate
+      pollHeaders = { Authorization: `Bearer ${apiKey}` }
+      setVideoPollContext(pollTaskId, { headers: pollHeaders, endpointTemplate })
+    } else {
+      taskEndpoint = modelStore.getVideoTaskEndpoint()
+      if (taskEndpoint.includes('{taskId}')) {
+        taskEndpoint = taskEndpoint.replace('{taskId}', pollTaskId)
+      }
+    }
+
+    const volcCfg = getProviderConfig('volcengine')
+
+    try {
+      const result = await getVideoTaskStatus(pollTaskId, {
+        endpoint: taskEndpoint,
+        headers: pollHeaders
+      })
+      const ctx = getVideoPollContext(pollTaskId)
+      const adaptedResult = ctx
+        ? volcCfg.responseAdapter?.video?.(result) || adaptResponse('video', result)
+        : adaptResponse('video', result)
+      const videoUrl =
+        adaptedResult.url ||
+        result.output?.video_url ||
+        result.output?.url ||
+        (Array.isArray(result.output) && result.output[0]?.url) ||
+        result.data?.url ||
+        result.data?.[0]?.url ||
+        result.url ||
+        result.content?.video_url ||
+        result.video_url
+      return videoUrl || null
+    } catch {
+      return null
+    } finally {
+      deleteVideoPollContext(pollTaskId)
+    }
+  }
+
+  /**
    * Generate video with fixed params (includes polling) | 固定参数生成视频（含轮询）
    * @param {Object} params - { model, prompt, first_frame_image, last_frame_image, ratio, duration }
    */
@@ -481,7 +547,19 @@ export const useVideoGeneration = () => {
     }
   }
 
-  return { loading, error, status, video, taskId, progress, generate, reset, createVideoTaskOnly, pollVideoTask }
+  return {
+    loading,
+    error,
+    status,
+    video,
+    taskId,
+    progress,
+    generate,
+    reset,
+    createVideoTaskOnly,
+    pollVideoTask,
+    fetchVideoResultUrlOnce
+  }
 }
 
 /**

@@ -446,8 +446,9 @@ import {
 import {
   updateNode, removeNode, duplicateNode, addNode, addEdge, addNodes,
   nodes, edges, canvasGroups, addCanvasGroup, updateCanvasGroup,
-  startBatchOperation, endBatchOperation
+  startBatchOperation, endBatchOperation, currentProjectId
 } from '../../stores/canvas'
+import { patchVideoNodeFromRemoteUrl } from '@/utils/applyVideoNodeCache'
 import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { streamChatCompletions } from '../../api/chat'
@@ -1061,8 +1062,9 @@ const handleBatchGenerateVideos = async () => {
         const { taskId: newTaskId, url } = await createVideoTaskOnly(params)
 
         if (url) {
+          const mediaPatch = await patchVideoNodeFromRemoteUrl(currentProjectId.value, url, null)
           updateNode(videoNodeId, {
-            url,
+            ...mediaPatch,
             loading: false,
             label: sd.label,
             model: bvModel.value,
