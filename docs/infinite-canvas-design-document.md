@@ -1,4 +1,4 @@
-# 火宝无限画布 (AI Canvas) - 核心系统架构与代码复刻指南 (AI Replication Prompt)
+# 闪创空间 - 核心系统架构与代码复刻指南 (AI Replication Prompt)
 
 > **文档目的**：本文档专门为 AI 代码生成器（如 Cursor, Trae, Claude 3.5 Sonnet）编写。它提供了极端详细的代码结构、数据流定义、核心算法和组件 Props，以便 AI 能够 1:1 像素级复刻或重构该无限画布系统。
 

@@ -50,7 +50,7 @@ export const IMAGE_MODELS = [
     {
         label: 'Nano Banana 2',
         key: 'nano-banana-2',
-        provider: ['chatfire'], // 火宝渠道
+        provider: ['chatfire'], // Chatfire 渠道
         sizes: BANANA_SIZE_OPTIONS.map(s => s.key),
         // qualities: SEEDREAM_QUALITY_OPTIONS,
         // getSizesByQuality: (quality) => quality === '4k' ? SEEDREAM_4K_SIZE_OPTIONS : SEEDREAM_SIZE_OPTIONS,
@@ -63,7 +63,7 @@ export const IMAGE_MODELS = [
     {
         label: 'Nano Banana Pro',
         key: 'nano-banana-pro',
-        provider: ['chatfire'], // 火宝渠道
+        provider: ['chatfire'], // Chatfire 渠道
         sizes: BANANA_SIZE_OPTIONS.map(s => s.key),
         // qualities: SEEDREAM_QUALITY_OPTIONS,
         // getSizesByQuality: (quality) => quality === '4k' ? SEEDREAM_4K_SIZE_OPTIONS : SEEDREAM_SIZE_OPTIONS,
@@ -76,7 +76,7 @@ export const IMAGE_MODELS = [
     {
         label: '豆包 Seedream 4.5',
         key: 'doubao-seedream-4-5-251128',
-        provider: ['chatfire'], // 火宝渠道
+        provider: ['chatfire'], // Chatfire 渠道
         sizes: SEEDREAM_SIZE_OPTIONS.map(s => s.key),
         qualities: SEEDREAM_QUALITY_OPTIONS,
         getSizesByQuality: (quality) => quality === '4k' ? SEEDREAM_4K_SIZE_OPTIONS : SEEDREAM_SIZE_OPTIONS,
@@ -89,7 +89,7 @@ export const IMAGE_MODELS = [
     {
         label: 'Nano Banana',
         key: 'nano-banana',
-        provider: ['chatfire'], // 火宝渠道
+        provider: ['chatfire'], // Chatfire 渠道
         tips: '尺寸写在提示词中: 尺寸 9:16',
         sizes: [],
         defaultParams: {
@@ -183,7 +183,7 @@ export const VIDEO_MODELS = [
     // {
     //     label: '可灵 Kling v2.5-turbo',
     //     key: 'kling-v2-1',
-    //     provider: ['chatfire'], // 仅火宝渠道
+    //     provider: ['chatfire'], // 仅 Chatfire 渠道
     //     ratios: VIDEO_RATIO_LIST.map(s => s.key),
     //     durs: [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }],
     //     defaultParams: { ratio: '9:16', duration: 10 }

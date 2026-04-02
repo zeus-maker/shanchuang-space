@@ -17,7 +17,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('/huobao-canvas'),
+  history: createWebHistory('/shanchuang-space'),
   routes
 })
 

@@ -4,7 +4,7 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/huobao-canvas',
+  base: '/shanchuang-space',
   // @ffmpeg/ffmpeg 内含 worker，预打包后 worker 路径会指向 .vite/deps 下不存在的文件
   optimizeDeps: {
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']

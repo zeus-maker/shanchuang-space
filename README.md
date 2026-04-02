@@ -1,221 +1,157 @@
-# AI Canvas
+# 闪创空间（Shanchuang Space）
 
-一个基于 Vue Flow 的可视化 AI 创作画布，支持文生图、视频生成等 AI 工作流的节点式编排。
-[体验地址](https://marketing.chatfire.site/huobao-canvas/)
+基于 **Vue Flow** 的可视化 **AI 创作工作流**应用：用节点与连线编排**文生图**、**视频生成**、**分镜脚本**等能力，支持本地项目管理、撤销重做、深色模式与**本地媒体落盘**（缓解对象存储签名链接过期问题）。
 
 ![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js)
 ![Vite](https://img.shields.io/badge/Vite-5.2-646CFF?logo=vite)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
+## 产品定位
+
+- **闪创空间**：面向创作者与团队的**节点式 AI 画布**，把提示词、模型参数、参考图与生成结果串成可复用流程。  
+- **Web 路径前缀**：应用部署在 **`/shanchuang-space/`** 下（与 `vite.config.js` 的 `base`、Vue Router 一致）。自建或反向代理时请保持路径一致。
+
+## ✨ 特性概览
+
+| 能力 | 说明 |
+|------|------|
+| 可视化编排 | 无限画布、缩放平移、网格吸附、打组与批量操作 |
+| 文生图 / 图生图 | 多模型、尺寸与数量；多图预览、主图与下载 |
+| 视频生成 | 首帧 / 尾帧、批量分镜视频、任务轮询与结果展示 |
+| 脚本与分镜 | 脚本节点、分镜表与故事板工作流 |
+| 智能编排 | 根据输入意图建议工作流并自动串行执行节点 |
+| 本地项目 | 浏览器本地持久化多项目；缩略图与历史记录 |
+| 本地媒体服务 | 可选 Node 服务将生成资源落入 `uploads/`，预览优先本地，视频支持凭 `taskId` 刷新链接 |
+| 体验 | 深浅色主题、API 设置、撤销 / 重做 |
+
 ## 📸 截图
 
-### 首页
-![首页](./doc/home.png)
+> 若仓库内截图路径与下列不一致，请将图片放在 `docs/doc/` 并更新链接。
 
-### 画布
-![画布](./doc/canvas.png)
-
-### API 配置
-![API 配置](./doc/api-config.png)
-
-## ✨ 特性
-
-- 🎨 **可视化节点编排** - 基于 Vue Flow 的无限画布，支持拖拽、缩放、连接
-- 🖼️ **文生图工作流** - 支持配置提示词、模型、尺寸等参数生成图片
-- 🎬 **视频生成工作流** - 支持图生视频，可设置首帧/尾帧图片
-- 🤖 **AI 提示词润色** - 一键 AI 优化提示词，提升生成质量
-- 🌓 **深色/浅色主题** - 支持主题切换，保护眼睛
-- 💾 **本地项目存储** - 项目数据本地持久化，支持多项目管理
-- ↩️ **撤销/重做** - 完整的操作历史记录
-
-## 📦 节点类型
-
-| 节点 | 描述 |
+| 页面 | 预览 |
 |------|------|
-| **文本节点** | 输入/编辑提示词文本 |
-| **文生图配置** | 配置图片生成参数（模型、尺寸、数量等） |
-| **图片节点** | 展示生成的图片或上传本地图片 |
-| **视频生成配置** | 配置视频生成参数（支持首帧/尾帧图片） |
-| **视频节点** | 展示生成的视频 |
+| 首页 | ![首页](./docs/doc/home.png) |
+| 画布 | ![画布](./docs/doc/canvas.png) |
+| API 配置 | ![API 配置](./docs/doc/api-config.png) |
+
+## 📦 主要节点类型
+
+| 节点 | 说明 |
+|------|------|
+| 文本 | 提示词与多场景文案 |
+| 文生图配置 | 模型、尺寸、数量、风格与内联生成结果 |
+| 图片 | 展示或上传图片 |
+| 视频配置 | 视频模型、比例、时长、首尾帧等 |
+| 视频 | 展示生成视频或本地上传 |
+| 脚本 | 分镜脚本生成与批量视频入口 |
+| LLM 配置 | 对话与文本生成 |
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- **Node.js** >= 18  
-- 包管理器任选：**pnpm** / **npm** / **yarn**
+- **Node.js** ≥ 18  
+- **pnpm** / **npm** / **yarn**
 
-### 安装依赖
+### 从旧版（火宝画布 / `huobao-canvas`）升级
+
+- 应用路径由 **`/huobao-canvas/`** 改为 **`/shanchuang-space/`**，反向代理与书签需同步更新。  
+- 浏览器中 **本地项目列表** 的存储键已更换，旧数据不会自动出现在「我的项目」中；若需保留，可在开发者工具 Application → Local Storage 中自行将原 `ai-canvas-projects` 键值复制到新键 **`shanchuang-space-projects`**（需自行承担格式兼容风险）。
+
+### 安装
 
 ```bash
-git clone https://github.com/chatfire-AI/huobao-canvas.git
-cd huobao-canvas
+git clone <你的仓库地址> shanchuang-space
+cd shanchuang-space
 
 pnpm install
 # 或
 npm install
 ```
 
-复制环境变量示例（使用火山直连等功能时）：
-
 ```bash
 cp .env.example .env
-# 按需编辑 .env，修改后需重启 dev
+# 按需编辑；修改后需重启开发服务
 ```
 
-### 启动项目（开发）
+### 启动（开发）
 
-应用 **`base` 为 `/huobao-canvas`**，开发时请在浏览器打开 **带该前缀的地址**（以终端输出为准），例如：
+浏览器访问（端口以终端为准）：
 
-`http://localhost:5173/huobao-canvas/`（端口以 Vite 实际打印为准）
+**`http://localhost:5173/shanchuang-space/`**
 
 | 方式 | 命令 | 说明 |
 |------|------|------|
-| **推荐** | `pnpm dev:all` 或 `npm run dev:all` | 同时启动 **Vite** 与 **媒体服务**（`server/index.mjs`，默认 `8787`）。生成结果会落到项目根目录 **`uploads/`**，刷新画布后预览优先走本地。 |
-| 双终端 | 终端① `pnpm run server` / `npm run server`；终端② `pnpm dev` / `npm run dev` | 与上一行等价，便于分别看日志。 |
-| 仅前端 | `pnpm dev` / `npm run dev` | 不启媒体服务时仍可正常调 API，但**不会做本地落盘**，长期依赖远程签名 URL 时过期风险与旧版一致。 |
+| **推荐** | `pnpm dev:all` / `npm run dev:all` | 同时启动 Vite + 媒体服务（默认 `8787`），资源写入 `./uploads/` |
+| 双终端 | `pnpm run server` + `pnpm dev` | 便于分屏看日志 |
+| 仅前端 | `pnpm dev` | 不调媒体服务时仍可生成，但无本地落盘与链接刷新能力 |
 
-**说明**：开发环境下，前端通过 Vite 将 **`/api/media`** 代理到本机 **`127.0.0.1:8787`**。若改媒体端口，请同步改 `vite.config.js` 里 `server.proxy['/api/media'].target`，或设置 **`VITE_MEDIA_API_URL`** 指向实际媒体服务 origin。
+`/api/media` 由 Vite 代理到 `127.0.0.1:8787`；改端口请同步 `vite.config.js` 或设置 `VITE_MEDIA_API_URL`。
 
-### 构建与生产运行
+### 构建与生产
 
 ```bash
 pnpm build
-# 或
-npm run build
-```
-
-构建完成后，用 **Node 同时提供静态页 + 媒体 API**（默认监听 **8787**）：
-
-```bash
 pnpm start
-# 或
-npm run start
+# 默认监听 8787：http://localhost:8787/shanchuang-space/
+# 生产可设 PORT=80 等
 ```
-
-浏览器访问：`http://localhost:8787/huobao-canvas/`（若设置环境变量 **`PORT=80`**，则使用 `http://localhost/huobao-canvas/`）。
-
-常用环境变量：
 
 | 变量 | 含义 |
 |------|------|
-| `SERVE_STATIC` | 为 `1` / `true` 时托管 `dist`（`npm run start` 已默认开启） |
-| `PORT` | 监听端口，未设置时默认 **8787** |
-| `MEDIA_ROOT` | 媒体文件目录，默认 **`<项目根>/uploads`** |
+| `SERVE_STATIC` | `1` / `true` 时由 Node 托管 `dist`（`npm run start` 已开启） |
+| `PORT` | 监听端口，默认 **8787** |
+| `MEDIA_ROOT` | 媒体目录，默认 **`<项目根>/uploads`** |
 
 ### Docker（可选）
 
 ```bash
-docker build -t huobao-canvas .
-docker run -p 80:80 -v "$(pwd)/uploads:/app/uploads" huobao-canvas
+docker build -t shanchuang-space .
+docker run -p 80:80 -v "$(pwd)/uploads:/app/uploads" shanchuang-space
 ```
 
-访问：`http://localhost/huobao-canvas/`。数据卷可持久化 `uploads`。
+访问：**`http://localhost/shanchuang-space/`**
 
-## ⚙️ 配置
+更详细的镜像与运维说明见 [`README.docker.md`](./README.docker.md)。
 
-首次使用需要配置 API：
+## ⚙️ 配置说明
 
-1. 点击右上角设置图标 ⚙️
-2. 填入 API Base URL 和 API Key
-3. 选择需要使用的模型
+1. 打开右上角 **设置**，配置 **API Base URL** 与 **API Key**，并选择模型。  
+2. 支持 **OpenAI 兼容** 接口；默认示例渠道为 **Chatfire**（`api.chatfire.site`），可按需改为自建网关。  
+3. **火山 Ark（豆包 Seedream / Seedance）**：可在根目录 `.env` 中配置 `VITE_VOLCENGINE_API_KEY`、`VITE_VOLCENGINE_BASE_URL`（详见 `.env.example`）。勿将 `.env` 提交到仓库。
 
-支持 OpenAI 兼容的 API 接口。
+### 本地媒体缓存
 
-**豆包 Seedream / Seedance 1.5 Pro（火山 Ark）：** 可将密钥写在项目根目录 `.env` 的 `VITE_VOLCENGINE_API_KEY`（参考 `.env.example`）。`VITE_VOLCENGINE_BASE_URL` 可只写到地域域名，缺少 `/api/v3` 时会自动补全，避免生图请求 404。修改后需重启开发服务；`.env` 勿提交仓库。
-
-### 本地媒体缓存（图片 / 视频落盘）
-
-火山等返回的素材链接常为短期签名 URL，刷新项目后会过期。`server/index.mjs` 在生成成功后将文件下载到 **`MEDIA_ROOT`（默认 `./uploads`）**，预览优先本地；缺失或失效时会再拉远程，视频可凭 **`videoTaskId`** 查询新链。开发启动方式见上文 **「启动项目（开发）」**；仅 Nginx 托管静态资源时，需为 **`/api/media/`** 配置反代到 Node（见仓库内 `nginx.conf`）。跨机部署媒体服务时，在前端 `.env` 设置 **`VITE_MEDIA_API_URL`**（完整 origin）。
+生成结果中的对象存储 URL 往往短期有效。启用 `server/index.mjs` 后，成功生成会写入 **`MEDIA_ROOT`**，界面优先请求本地文件；失败时会尝试用保存的远程地址再拉取，视频在必要时使用 **`videoTaskId`** 查询新地址。仅使用 Nginx 托管静态资源时，请为 **`/api/media/`** 反代到 Node（参考 `nginx.conf`）。
 
 ## 🛠️ 技术栈
 
-- **框架**: [Vue 3](https://vuejs.org/) + [Vite](https://vitejs.dev/)
-- **画布**: [Vue Flow](https://vueflow.dev/)
-- **UI 组件**: [Naive UI](https://www.naiveui.com/)
-- **样式**: [Tailwind CSS](https://tailwindcss.com/)
-- **图标**: [@vicons/ionicons5](https://www.xicons.org/)
-- **路由**: [Vue Router](https://router.vuejs.org/)
+Vue 3 · Vite · Vue Flow · Naive UI · Tailwind CSS · Pinia · Vue Router · Express（媒体服务）
 
-## 📁 项目结构
+## 📁 仓库结构（摘要）
 
 ```
-src/
-├── api/          # API 请求封装
-├── assets/       # 静态资源
-├── components/   # 组件
-│   ├── nodes/    # 节点组件
-│   └── edges/    # 边组件
-├── hooks/        # 组合式函数
-├── router/       # 路由配置
-├── stores/       # 状态管理
-├── utils/        # 工具函数
-└── views/        # 页面视图
+src/           # 前端源码（api、components、views、stores、hooks…）
+server/        # 本地媒体缓存与可选静态托管
+docs/          # 产品/技术文档与 dev 留档
 ```
+
+深度说明见 [`docs/TECH.md`](./docs/TECH.md)、[`docs/product-requirements-document.md`](./docs/product-requirements-document.md)。
 
 ## 🔄 自动执行工作流
 
-开启「自动执行」模式后，系统会通过 AI 分析用户意图，自动编排并执行工作流。
+根据首页或节点中的输入，系统可解析意图并自动创建、连接与执行节点（文生图、分镜、视频等）。核心逻辑见 `useWorkflowOrchestrator` 及相关配置。
 
-### 工作流类型
+## 📝 开发与留档
 
-| 类型 | 触发条件 | 说明 |
-|------|---------|------|
-| `text_to_image` | 默认 | 文生图工作流 |
-| `text_to_image_to_video` | 包含"视频"、"动画"等关键词 | 文生图生视频工作流 |
-| `storyboard` | 包含"分镜"、"场景"、"镜头"等关键词 | 分镜工作流 |
-
-### 工作流 1: 文生图 / 文生图生视频
-
-![工作流架构](./doc/workflow.png)
-
-### 工作流 2: 分镜工作流 (Storyboard)
-
-![分镜工作流](./doc/workflow2.png)
-
-**示例输入:** `蜡笔小新去上学。分镜一：清晨的战争；分镜二：出发的风姿`
-
-**AI 解析:**
-- 提取角色: 蜡笔小新 (外观描述)
-- 拆分分镜: 清晨的战争、出发的风姿
-
-**执行流程:**
-1. 生成角色参考图
-2. 依次生成各分镜图片 (连接角色参考图保持一致性)
-
-### 执行流程
-
-1. **AI 意图分析** - 分析用户输入，判断工作流类型，生成优化后的提示词
-2. **创建节点** - 按顺序创建文本节点和配置节点
-3. **串行执行** - 配置节点自动执行，等待上一步完成后再执行下一步
-4. **输出结果** - 生成图片/视频节点展示结果
-
-### 核心组件
-
-- `useWorkflowOrchestrator` - 工作流编排器 Hook
-- `waitForConfigComplete` - 等待配置节点完成
-- `waitForOutputReady` - 等待输出节点就绪
-
-## 📝 开发与问题记录
-
-修复 Bug 或排查问题后，请在 [`docs/dev/`](./docs/dev/) 按模板补充记录（原因、修改点、复盘），并 **`git commit`** 写明原因与修改要点。说明见 [`docs/dev/README.md`](./docs/dev/README.md)。
+在 [`docs/dev/`](./docs/dev/) 按规范记录 Bug 修复与功能变更，并与提交信息对应。索引说明见 [`docs/dev/README.md`](./docs/dev/README.md)。
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+1. Fork 仓库  
+2. 新建分支 `feature/your-feature`  
+3. 提交并推送后发起 Pull Request  
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 提交 Pull Request
-
-## 联系我
-
-扫码添加微信交流：
-
-<img src="./doc/wx-group.jpg" width="200" alt="微信二维码" />
-
-## 📄 License
+## 📄 许可证
 
 [MIT](./LICENSE)

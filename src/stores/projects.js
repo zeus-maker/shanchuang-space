@@ -5,7 +5,7 @@
 import { ref, computed, watch } from 'vue'
 
 // Storage key | 存储键
-const STORAGE_KEY = 'ai-canvas-projects'
+const STORAGE_KEY = 'shanchuang-space-projects'
 
 // Generate unique ID | 生成唯一ID
 const generateId = () => `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`

@@ -21,7 +21,7 @@
       <section class="text-center mb-12">
         <div class="flex items-center justify-center gap-4 mb-8">
           <img src="../assets/logo.png" alt="Logo" class="w-12 h-12 md:w-16 md:h-16" />
-          <h1 class="text-2xl md:text-4xl font-bold text-[var(--text-primary)]">欢迎来到火宝无限画布</h1>
+          <h1 class="text-2xl md:text-4xl font-bold text-[var(--text-primary)]">欢迎来到闪创空间</h1>
         </div>
         
         <!-- Input area | 输入区域 -->
@@ -381,7 +381,7 @@ const handleCreateWithInput = () => {
     const name = inputText.value.trim() || '未命名项目'
     const id = createProject(name)
     // Store the input text to be used as initial prompt
-    sessionStorage.setItem('ai-canvas-initial-prompt', inputText.value.trim())
+    sessionStorage.setItem('shanchuang-space-initial-prompt', inputText.value.trim())
     inputText.value = ''
     router.push(`/canvas/${id}`)
   })

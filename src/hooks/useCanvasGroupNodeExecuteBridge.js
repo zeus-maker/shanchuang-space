@@ -3,7 +3,7 @@
  */
 import { onMounted, onUnmounted } from 'vue'
 
-export const CANVAS_GROUP_NODE_EXECUTE_EVENT = 'huobao-canvas-group-node-execute'
+export const CANVAS_GROUP_NODE_EXECUTE_EVENT = 'shanchuang-space-group-node-execute'
 
 export function registerCanvasGroupNodeExecuteBridge (nodeIdGetter, runExecute) {
   const handler = async (e) => {

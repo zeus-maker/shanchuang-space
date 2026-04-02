@@ -1,80 +1,53 @@
-# huobao-canvas Docker 部署指南
+# 闪创空间 · Docker 部署说明
 
-## 快速开始
+镜像内由 **Node** 同时提供：
 
-### 方式一：从 Docker Hub 拉取
+- 静态前端：`/shanchuang-space/`
+- 本地媒体 API：`/api/media/*`
 
-```bash
-docker pull peigen666/huobao-canvas:latest
-docker run -d -p 8080:80 --name huobao-canvas peigen666/huobao-canvas:latest
-```
+默认监听 **80** 端口，媒体文件目录 **`/app/uploads`**（建议挂载数据卷）。
 
-访问：http://localhost:8080/huobao-canvas/
-
-
-### 方式二：本地构建
+## 快速运行
 
 ```bash
-# 1. 构建前端
-pnpm install
-pnpm build
-
-# 2. 构建 Docker 镜像
-docker build -t huobao-canvas .
-
-# 3. 运行容器
-docker run -d -p 8080:80 --name huobao-canvas huobao-canvas
+docker build -t shanchuang-space:latest .
+docker run -d -p 8080:80 --name shanchuang-space \
+  -v "$(pwd)/uploads:/app/uploads" \
+  shanchuang-space:latest
 ```
+
+浏览器访问：**`http://localhost:8080/shanchuang-space/`**
 
 ## 常用命令
 
 ```bash
-# 停止容器
-docker stop huobao-canvas
-
-# 启动容器
-docker start huobao-canvas
-
-# 删除容器
-docker rm huobao-canvas
-
-# 查看日志
-docker logs huobao-canvas
-
-# 进入容器
-docker exec -it huobao-canvas sh
+docker stop shanchuang-space
+docker start shanchuang-space
+docker rm shanchuang-space
+docker logs -f shanchuang-space
+docker exec -it shanchuang-space sh
 ```
 
-## 配置说明
+## 环境变量
 
-### 端口映射
+| 变量 | 说明 |
+|------|------|
+| `PORT` | 容器内监听端口，默认 `80` |
+| `MEDIA_ROOT` | 媒体存储目录，默认 `/app/uploads` |
+| `SERVE_STATIC` | 是否托管 `dist`，镜像内已默认开启 |
 
-默认映射 `8080:80`，可修改宿主机端口：
+## 仅 Nginx 反代静态 + 分离 Node
+
+若静态资源由 Nginx 提供、媒体服务单独跑 Node，请参考仓库根目录 **`nginx.conf`** 中 **`/shanchuang-space`** 与 **`/api/media/`** 的示例；并确保前端构建的 `base` 仍为 **`/shanchuang-space`**。
+
+## 发布镜像（示例）
 
 ```bash
-docker run -d -p 3000:80 --name huobao-canvas peigen666/huobao-canvas:latest
+docker build -t <你的注册表>/shanchuang-space:latest .
+docker push <你的注册表>/shanchuang-space:latest
 ```
 
-### Nginx 配置
+## 说明
 
-- 静态文件路径：`/usr/share/nginx/html/huobao-canvas`
-- API 代理：`/v1` → `https://api.chatfire.site`
-- Gzip 压缩：已启用
-- 静态资源缓存：1 年
-
-## 推送镜像
-
-```bash
-# 登录 Docker Hub
-docker login
-
-# 构建并推送
-docker build -t peigen666/huobao-canvas:latest .
-docker push peigen666/huobao-canvas:latest
-```
-
-## 注意事项
-
-1. 确保 `dist/` 目录已存在（先运行 `pnpm build`）
-2. 避免使用浏览器屏蔽的端口（如 6666、6667、6668）
-3. 访问路径需带 `/huobao-canvas` 后缀
+- 访问应用时必须带路径前缀 **`/shanchuang-space/`**（与 `vite.config.js` 的 `base` 一致）。  
+- 对外暴露的 AI 网关（如 `/v1`）需在网关或 Nginx 上单独配置；本镜像仅包含前端与本地媒体服务。

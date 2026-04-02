@@ -102,7 +102,7 @@ app.post('/api/media/cache', async (req, res) => {
 
   let r
   try {
-    r = await fetch(sourceUrl, { redirect: 'follow', headers: { 'User-Agent': 'huobao-canvas-media-cache/1.0' } })
+    r = await fetch(sourceUrl, { redirect: 'follow', headers: { 'User-Agent': 'shanchuang-space-media-cache/1.0' } })
   } catch (e) {
     return res.status(502).json({ ok: false, error: String(e?.message || e) })
   }
@@ -123,7 +123,7 @@ app.post('/api/media/cache', async (req, res) => {
 if (SERVE_STATIC) {
   const dist = path.join(repoRoot, 'dist')
   app.use(
-    '/huobao-canvas',
+    '/shanchuang-space',
     express.static(dist, { fallthrough: true }),
     (_req, res) => {
       res.sendFile(path.join(dist, 'index.html'))

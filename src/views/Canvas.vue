@@ -710,7 +710,7 @@ const GROUP_EXECUTE_TIMEOUT_MS = 600_000
 const GROUP_EXECUTABLE_TYPES = ['imageConfig', 'videoConfig', 'llmConfig']
 const showToolboxNameModal = ref(false)
 const toolboxNameInput = ref('')
-const TOOLBOX_STORAGE_KEY = 'huobao-canvas-toolbox'
+const TOOLBOX_STORAGE_KEY = 'shanchuang-space-toolbox'
 
 const GROUP_FILL_BG = {
   none: 'transparent',
@@ -1941,9 +1941,9 @@ onMounted(() => {
   loadProjectById(route.params.id)
   
   // Check for initial prompt from home page | 检查来自首页的初始提示词
-  const initialPrompt = sessionStorage.getItem('ai-canvas-initial-prompt')
+  const initialPrompt = sessionStorage.getItem('shanchuang-space-initial-prompt')
   if (initialPrompt) {
-    sessionStorage.removeItem('ai-canvas-initial-prompt')
+    sessionStorage.removeItem('shanchuang-space-initial-prompt')
     chatInput.value = initialPrompt
     // Auto-send the message | 自动发送消息
     nextTick(() => {

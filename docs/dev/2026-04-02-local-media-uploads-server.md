@@ -8,7 +8,7 @@
 
 ## 修改点
 
-- 新增 **`server/index.mjs`**（Express）：`POST /api/media/cache` 从 `sourceUrl` 拉取并写入 `MEDIA_ROOT/<projectId>/`（默认仓库根目录 `uploads/`）；`GET/HEAD /api/media/file/:projectId/:filename` 提供静态读取；可选 `SERVE_STATIC` 同进程托管 `dist` 下 `/huobao-canvas` 前端。
+- 新增 **`server/index.mjs`**（Express）：`POST /api/media/cache` 从 `sourceUrl` 拉取并写入 `MEDIA_ROOT/<projectId>/`（默认仓库根目录 `uploads/`）；`GET/HEAD /api/media/file/:projectId/:filename` 提供静态读取；可选 `SERVE_STATIC` 同进程托管 `dist` 下 `/shanchuang-space` 前端。
 - 前端工具：**`localMediaServer.js`**（请求缓存、拼本地 URL、HEAD 探测）、**`generatedMediaAssets.js`**（文生图 `generatedUrls` 与 `generatedLocalKeys` 对齐预览）、**`applyVideoNodeCache.js`**（视频节点统一落盘字段）。
 - **文生图节点**：生成后并发缓存；预览优先本地；挂载时补全缺失的本地文件；`img` `@error` 时尝试按远程源再缓存。**`selectedUrl` / `generatedUrls` 仍为远程**，供下游视频等 API 使用。
 - **视频节点**：轮询成功后落盘并保留 **`videoTaskId`**；展示用 `localVideoKey` 优先；挂载与 `video` 播放错误时按「本地 → sourceUrl → task 查询」顺序恢复。

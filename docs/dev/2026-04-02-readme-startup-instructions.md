@@ -4,7 +4,7 @@
 
 ## 背景与原因
 
-本地媒体服务与 `dev:all` 加入后，单一「npm run dev」说明不足以覆盖推荐启动方式、访问路径（`/huobao-canvas`）、生产 `start` 与 Docker。
+本地媒体服务与 `dev:all` 加入后，单一「npm run dev」说明不足以覆盖推荐启动方式、访问路径（`/shanchuang-space`）、生产 `start` 与 Docker。
 
 ## 修改点
 
