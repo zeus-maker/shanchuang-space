@@ -454,6 +454,13 @@ import { useModelStore } from '../../stores/pinia'
 import { streamChatCompletions } from '../../api/chat'
 import { DEFAULT_CHAT_MODEL, VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../../config/models'
 import { useVideoGeneration } from '../../hooks'
+import {
+  inferTargetSecondsForStoryboard,
+  computeStoryboardSceneCount,
+  buildStoryboardSystemPrompt,
+  parseScriptJSON,
+  repairStoryboardJsonViaLlm
+} from '@/utils/scriptStoryboard'
 
 // ── 常量 ──────────────────────────────────────────────────────────────
 const PROMPT_PLACEHOLDER = '描述剧情或添加角色参考、视频参考等，为你生成分镜脚本'
@@ -474,24 +481,6 @@ const SAMPLE_SCRIPT = `《我在盛唐写天下》
 
 【第三幕】
 殿外风起。长安街市灯火连绵。皇帝低声："此诗，当传万世。"沈昭昭目光坚定。她轻声自语："既然来了……那便写尽三万里长安。"镜头推远。盛唐山河展开。`
-
-const SYSTEM_PROMPT = `你是专业的分镜脚本编剧。根据用户提供的剧本内容，生成详细的分镜脚本。
-输出规则：
-1. 直接输出 JSON 数组，不要任何前置说明、代码块标记或其他内容
-2. 每个分镜对象包含以下字段（字段名使用驼峰命名）：
-   - sceneNo: 镜号（从1开始的整数）
-   - duration: 预计时长（秒，2-6的整数）
-   - description: 画面描述（中文，15-30字）
-   - character1: 主要角色名（中文）
-   - characterDesc1: 角色外貌详细描述（中文）
-   - characterImg1: 角色图片生成提示词（英文，用于 AI 作图）
-   - action: 角色动作（中文，10-20字）
-   - sceneTag: 场景标签（中文，如：室内/室外/城市/自然/大殿）
-   - lighting: 光影氛围（中文，如：日光直射/逆光/霓虹灯/烛光）
-   - dialogue: 对白（中文，无对白则为空字符串）
-   - storyboardPrompt: 分镜提示词（英文，详细的图片生成 prompt，包含构图、风格、光影、细节）
-   - videoMotionPrompt: 视频运动提示词（英文，如：slow zoom in, pan left to right）
-3. 根据剧本内容生成 12-20 个分镜，确保画面节奏紧凑`
 
 const TABLE_COLS = [
   { key: 'sceneNo',           label: '镜号',       width: '44px'  },
@@ -615,67 +604,6 @@ const handlePreviewClick = () => {
   window.$message?.success('已连接示例剧本，可修改后点击执行')
 }
 
-// ── JSON parser: handles raw array / wrapped object / code fence / DeepSeek <think> ───
-const parseScriptJSON = (text) => {
-  /** 尝试 JSON.parse，兼容裸数组和 {scenes:[...]} 包装对象 */
-  const tryParse = (s) => {
-    const extract = (r) => {
-      if (Array.isArray(r) && r.length) return r
-      if (r?.scenes && Array.isArray(r.scenes) && r.scenes.length) return r.scenes
-      return null
-    }
-    const raw = s.trim()
-    // 第一次：直接解析
-    try { const r = JSON.parse(raw); const res = extract(r); if (res) return res } catch {}
-    // 第二次：修复 LLM 常见问题再解析
-    // - 去掉数组/对象末尾多余逗号
-    // - 把字符串值内的裸换行/回车/制表符转义（LLM 最常见的 JSON 输出问题）
-    try {
-      const repaired = raw
-        .replace(/,(\s*[}\]])/g, '$1')
-        .replace(/"((?:[^"\\]|\\.)*)"/gs, (_, inner) =>
-          '"' + inner.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"'
-        )
-      const r = JSON.parse(repaired); const res = extract(r); if (res) return res
-    } catch {}
-    return null
-  }
-
-  /** 用括号深度计数提取第一个完整 JSON 块（[ 或 {） */
-  const extractByBracket = (s, openCh, closeCh) => {
-    const start = s.indexOf(openCh)
-    if (start === -1) return null
-    let depth = 0
-    for (let i = start; i < s.length; i++) {
-      if (s[i] === openCh) depth++
-      else if (s[i] === closeCh) { depth--; if (depth === 0) return s.slice(start, i + 1) }
-    }
-    return null
-  }
-
-  // 1. 剥离 DeepSeek <think>...</think> 推理块（内含大量 [ ] 会干扰正则）
-  let t = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
-
-  // 2. 直接以 [ 或 { 开头
-  if (t.startsWith('[') || t.startsWith('{')) {
-    const r = tryParse(t); if (r) return r
-  }
-
-  // 3. 代码块 ```json ... ``` 或 ``` ... ```
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fence) { const r = tryParse(fence[1]); if (r) return r }
-
-  // 4. 括号计数提取 JSON 数组
-  const arr = extractByBracket(t, '[', ']')
-  if (arr) { const r = tryParse(arr); if (r) return r }
-
-  // 5. 括号计数提取 JSON 对象（兼容 {"scenes":[...]} 格式）
-  const obj = extractByBracket(t, '{', '}')
-  if (obj) { const r = tryParse(obj); if (r) return r }
-
-  return null
-}
-
 // ── Build user message (connected text + prompt) ───────────────────────
 const buildUserMessage = () => {
   const texts = edges.value
@@ -721,9 +649,16 @@ const handleGenerate = async () => {
     const chatUrl = modelStore.getChatEndpoint()
     const parsedUrl = new URL(chatUrl)
 
+    const targetSeconds = inferTargetSecondsForStoryboard(msg)
+    const sceneCount = computeStoryboardSceneCount(targetSeconds)
+    const systemPrompt = buildStoryboardSystemPrompt({
+      targetSeconds: targetSeconds ?? undefined,
+      sceneCount: sceneCount ?? undefined
+    })
+
     for await (const chunk of streamChatCompletions(
       { model: localModel.value, messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user',   content: msg }
         ] },
       abortCtrl.signal,
@@ -735,7 +670,18 @@ const handleGenerate = async () => {
     }
     genProgress.value = 100
 
-    const scenes = parseScriptJSON(fullText)
+    let scenes = parseScriptJSON(fullText)
+    if (!scenes?.length) {
+      window.$message?.warning('输出格式异常，已发起 JSON 修复，请稍候…')
+      scenes = await repairStoryboardJsonViaLlm({
+        model: localModel.value,
+        rawText: fullText,
+        signal: abortCtrl.signal,
+        origin: parsedUrl.origin,
+        pathname: parsedUrl.pathname,
+        apiKey: modelStore.currentApiKey || ''
+      })
+    }
     if (!scenes?.length) throw new Error('解析分镜数据失败，请重试')
 
     updateNode(props.id, { status: 'done', scenes })
