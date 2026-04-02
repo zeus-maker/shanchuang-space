@@ -203,8 +203,8 @@
             :class="activeEditTab === 'i2v'
               ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] shadow-sm'
               : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'"
-            :disabled="!hasFirstFrame"
-            @click="hasFirstFrame && (activeEditTab = 'i2v')"
+            :disabled="!hasFirstFrameUrl"
+            @click="hasFirstFrameUrl && (activeEditTab = 'i2v')"
           >
             图生视频
           </button>
@@ -236,13 +236,19 @@
               @error="onFirstFrameImgError"
             />
             <div
+              v-else-if="hasFirstFrameUrl"
+              class="w-14 h-14 rounded-md border border-dashed border-amber-500/40 flex items-center justify-center text-[10px] text-[var(--text-tertiary)] text-center px-0.5 leading-tight"
+            >
+              预览失败
+            </div>
+            <div
               v-else
               class="w-14 h-14 rounded-md border border-dashed border-[var(--border-color)] flex items-center justify-center text-[10px] text-[var(--text-tertiary)]"
             >
               无首帧
             </div>
             <span
-              v-if="firstFrameThumbUrl"
+              v-if="hasFirstFrameUrl"
               class="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] px-0.5 flex items-center justify-center rounded bg-[var(--accent-color)] text-[10px] text-white font-medium"
             >1</span>
           </div>
@@ -329,7 +335,7 @@
                   <n-icon v-else :size="20"><ArrowUpOutline /></n-icon>
                 </button>
               </template>
-              {{ canSubmitRegenerate ? '重新生成' : (activeEditTab === 'i2v' && !hasFirstFrame ? '缺少首帧' : '请填写提示词') }}
+              {{ canSubmitRegenerate ? '重新生成' : (activeEditTab === 'i2v' && !hasFirstFrameUrl ? '缺少首帧' : '请填写提示词') }}
             </n-tooltip>
           </div>
         </div>
@@ -517,16 +523,22 @@ const canExpandVideoEdit = computed(() => {
   return true
 })
 
-const hasFirstFrame = computed(() =>
-  !!(props.data?.videoGenParams?.first_frame_image && !firstFrameImgBroken.value)
+/** 节点是否保存了首帧图 URL（与缩略图是否加载成功无关，用于 Tab 可切换、重新生成） */
+const hasFirstFrameUrl = computed(() =>
+  !!String(props.data?.videoGenParams?.first_frame_image || '').trim()
 )
 
 watch(
-  () => [hasFirstFrame.value, canExpandVideoEdit.value],
-  ([hasFf, show]) => {
-    if (show && !hasFf && activeEditTab.value === 'i2v') activeEditTab.value = 't2v'
+  () => [hasFirstFrameUrl.value, canExpandVideoEdit.value],
+  ([hasUrl, show]) => {
+    if (show && !hasUrl && activeEditTab.value === 'i2v') activeEditTab.value = 't2v'
   }
 )
+
+/** 切回图生时重置缩略图错误态，避免 Tab 切换卸载 img 误触 error 后锁死「图生」按钮 */
+watch(activeEditTab, (t) => {
+  if (t === 'i2v') firstFrameImgBroken.value = false
+})
 
 /** 可展开且已展开 */
 const showVideoEditPanel = computed(() =>
@@ -592,7 +604,9 @@ onUnmounted(() => {
 
 const firstFrameThumbUrl = computed(() => {
   const u = props.data?.videoGenParams?.first_frame_image
-  return u && !firstFrameImgBroken.value ? u : ''
+  const s = u && String(u).trim()
+  if (!s || firstFrameImgBroken.value) return ''
+  return s
 })
 
 const currentPromptDraft = computed({
@@ -641,7 +655,7 @@ const currentRegenPrompt = computed(() => {
 
 const canSubmitRegenerate = computed(() => {
   if (!currentRegenPrompt.value || isRegenerating.value) return false
-  if (activeEditTab.value === 'i2v') return hasFirstFrame.value
+  if (activeEditTab.value === 'i2v') return hasFirstFrameUrl.value
   return true
 })
 
