@@ -42,37 +42,75 @@
 
 ### 环境要求
 
-- Node.js >= 18
-- pnpm / npm / yarn
+- **Node.js** >= 18  
+- 包管理器任选：**pnpm** / **npm** / **yarn**
 
-### 安装
+### 安装依赖
 
 ```bash
-# 克隆项目
 git clone https://github.com/chatfire-AI/huobao-canvas.git
 cd huobao-canvas
 
-# 安装依赖
 pnpm install
 # 或
 npm install
-
-# 启动开发服务器（含本地媒体缓存时推荐同时起 media server）
-pnpm dev:all
-# 或仅前端
-pnpm dev
-# 或
-npm run dev:all
-npm run dev
 ```
 
-### 构建
+复制环境变量示例（使用火山直连等功能时）：
+
+```bash
+cp .env.example .env
+# 按需编辑 .env，修改后需重启 dev
+```
+
+### 启动项目（开发）
+
+应用 **`base` 为 `/huobao-canvas`**，开发时请在浏览器打开 **带该前缀的地址**（以终端输出为准），例如：
+
+`http://localhost:5173/huobao-canvas/`（端口以 Vite 实际打印为准）
+
+| 方式 | 命令 | 说明 |
+|------|------|------|
+| **推荐** | `pnpm dev:all` 或 `npm run dev:all` | 同时启动 **Vite** 与 **媒体服务**（`server/index.mjs`，默认 `8787`）。生成结果会落到项目根目录 **`uploads/`**，刷新画布后预览优先走本地。 |
+| 双终端 | 终端① `pnpm run server` / `npm run server`；终端② `pnpm dev` / `npm run dev` | 与上一行等价，便于分别看日志。 |
+| 仅前端 | `pnpm dev` / `npm run dev` | 不启媒体服务时仍可正常调 API，但**不会做本地落盘**，长期依赖远程签名 URL 时过期风险与旧版一致。 |
+
+**说明**：开发环境下，前端通过 Vite 将 **`/api/media`** 代理到本机 **`127.0.0.1:8787`**。若改媒体端口，请同步改 `vite.config.js` 里 `server.proxy['/api/media'].target`，或设置 **`VITE_MEDIA_API_URL`** 指向实际媒体服务 origin。
+
+### 构建与生产运行
 
 ```bash
 pnpm build
 # 或
 npm run build
 ```
+
+构建完成后，用 **Node 同时提供静态页 + 媒体 API**（默认监听 **8787**）：
+
+```bash
+pnpm start
+# 或
+npm run start
+```
+
+浏览器访问：`http://localhost:8787/huobao-canvas/`（若设置环境变量 **`PORT=80`**，则使用 `http://localhost/huobao-canvas/`）。
+
+常用环境变量：
+
+| 变量 | 含义 |
+|------|------|
+| `SERVE_STATIC` | 为 `1` / `true` 时托管 `dist`（`npm run start` 已默认开启） |
+| `PORT` | 监听端口，未设置时默认 **8787** |
+| `MEDIA_ROOT` | 媒体文件目录，默认 **`<项目根>/uploads`** |
+
+### Docker（可选）
+
+```bash
+docker build -t huobao-canvas .
+docker run -p 80:80 -v "$(pwd)/uploads:/app/uploads" huobao-canvas
+```
+
+访问：`http://localhost/huobao-canvas/`。数据卷可持久化 `uploads`。
 
 ## ⚙️ 配置
 
@@ -88,12 +126,7 @@ npm run build
 
 ### 本地媒体缓存（图片 / 视频落盘）
 
-火山等返回的素材链接常为短期签名 URL，刷新项目后会过期。仓库自带轻量 Node 服务 `server/index.mjs`，在生成成功后将远程文件下载到本地目录，**预览优先走本地**；本地文件缺失或播放失败时，会尝试用已保存的远程地址再次拉取，视频在仍无效时用 **`videoTaskId` 调查询接口** 换新链再缓存。
-
-- **开发**：终端一运行 `npm run server`（默认端口 `8787`，目录默认 `./uploads`），终端二 `npm run dev`；或一条命令 `npm run dev:all`。
-- **环境变量**：`MEDIA_ROOT` 指定存储根路径（默认项目根下 `uploads/`）；`MEDIA_SERVER_PORT` / `PORT` 控制监听端口。
-- **前端**：默认使用相对路径 `/api/media`（Vite 已代理到本机 8787）。若媒体服务在其它机器，设置 `VITE_MEDIA_API_URL` 为完整 origin。
-- **生产**：`npm run build` 后执行 `SERVE_STATIC=1 PORT=80 node server/index.mjs`（或 Docker 镜像内已配置 `SERVE_STATIC`），由同一进程提供 `/huobao-canvas` 静态资源与 `/api/media`。若仍用 **仅 Nginx** 托管静态文件，需把 `location /api/media/` 反代到本机 Node 服务（参见 `nginx.conf` 示例）。
+火山等返回的素材链接常为短期签名 URL，刷新项目后会过期。`server/index.mjs` 在生成成功后将文件下载到 **`MEDIA_ROOT`（默认 `./uploads`）**，预览优先本地；缺失或失效时会再拉远程，视频可凭 **`videoTaskId`** 查询新链。开发启动方式见上文 **「启动项目（开发）」**；仅 Nginx 托管静态资源时，需为 **`/api/media/`** 配置反代到 Node（见仓库内 `nginx.conf`）。跨机部署媒体服务时，在前端 `.env` 设置 **`VITE_MEDIA_API_URL`**（完整 origin）。
 
 ## 🛠️ 技术栈
 
