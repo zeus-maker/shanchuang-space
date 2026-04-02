@@ -88,7 +88,7 @@
           <!-- 参考图：预览区上方悬浮工具条 -->
           <div
             v-if="showVideoPromptPanel"
-            class="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-black/55 backdrop-blur-sm border border-white/10 opacity-0 group-hover/vid:opacity-100 transition-opacity duration-200 pointer-events-auto"
+            class="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-black/55 backdrop-blur-sm border border-white/10 opacity-0 pointer-events-none group-hover/vid:pointer-events-auto group-hover/vid:opacity-100 transition-opacity duration-200"
           >
             <n-tooltip trigger="hover">
               <template #trigger>
