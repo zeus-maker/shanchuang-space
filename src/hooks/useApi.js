@@ -499,7 +499,7 @@ export const useVideoGeneration = () => {
             requestData.soraI2vPixelSize = `${width}x${height}`
           }
         } catch {
-          /* 跨域或无 CORS 时无法读尺寸，回退 providers 内 sora2TaskSize(面板比例) */
+          /* 无法读尺寸时 providers 内按面板比例选四种允许 size 之一 */
         }
       }
     }

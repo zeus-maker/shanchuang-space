@@ -151,10 +151,10 @@
                 @click.stop
               >
                 <div class="bv-settings">
+                  <p v-if="bvIsSora2I2v" class="bv-hint-text" style="margin: 0 0 4px;">Sora2 仅允许四种固定尺寸（1280×720 / 1792×1024 / 720×1280 / 1024×1792），将按每张首帧比例并参考下方比例与清晰度档位选用。</p>
                   <div class="bv-section">
                     <span class="bv-section-title">比例</span>
-                    <p v-if="bvIsSora2I2v" class="bv-hint-text">Sora2 图生视频：每张分镜按对应首帧图像素提交尺寸，无需选择比例。</p>
-                    <div v-else class="bv-option-row">
+                    <div class="bv-option-row">
                       <button v-for="r in bvRatioList" :key="r" type="button" class="bv-option-btn" :class="{ active: bvRatio === r }" @click="bvRatio = r">
                         <span class="bv-ratio-icon" :class="`ratio-${r.replace(':', 'x')}`"></span>
                         {{ r }}
@@ -176,8 +176,7 @@
                   </div>
                   <div class="bv-section">
                     <span class="bv-section-title">生成品质</span>
-                    <p v-if="bvIsSora2I2v" class="bv-hint-text">该模型由上游按首帧尺寸生成，此处品质选项不参与请求。</p>
-                    <div v-else class="bv-option-row">
+                    <div class="bv-option-row">
                       <button v-for="res in bvResolutionList" :key="res" type="button" class="bv-option-btn" :class="{ active: bvResolution === res }" @click="bvResolution = res">{{ res === '480p' ? '标准' : res === '720p' ? '高清' : '超清' }}</button>
                     </div>
                   </div>
@@ -198,9 +197,7 @@
                     </button>
                   </n-dropdown>
                   <span class="bv-summary">
-                    <template v-if="bvIsSora2I2v">随首帧尺寸</template>
-                    <template v-else>{{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }}</template>
-                    · {{ bvDuration }}s ·
+                    {{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }} · {{ bvDuration }}s ·
                     <n-icon :size="11"><component :is="bvAudio ? VolumeHighOutline : VolumeMuteOutline" /></n-icon>
                   </span>
                   <span class="bv-scene-count">全部 {{ bvSceneCount }} 个分镜</span>
@@ -1340,7 +1337,7 @@ const bvDurList = computed(() => {
   const m = VIDEO_MODELS.find(x => x.key === bvModel.value)
   return m?.durs || [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }]
 })
-/** Sora2 图生视频：上游要求 parameters.size 与首帧像素一致，面板比例/品质不生效 */
+/** Sora2 图生视频：仅四种固定 size，用于批量面板说明文案 */
 const bvIsSora2I2v = computed(() => getModelConfig(bvModel.value)?.modelverseTaskStyle === 'sora2_i2v')
 const bvSceneCount = computed(() => selectedGroupImageNodes.value.length)
 
@@ -1557,10 +1554,8 @@ const selectedGroupVideosStitchable = computed(() => {
 const bvCreditCost = computed(() => {
   let perVideo = 55
   if (bvDuration.value >= 10) perVideo *= 2
-  if (!bvIsSora2I2v.value) {
-    if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
-    else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
-  }
+  if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
+  else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
   if (bvAudio.value) perVideo = Math.ceil(perVideo * 1.2)
   return bvSceneCount.value * perVideo
 })

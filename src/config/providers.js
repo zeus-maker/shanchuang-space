@@ -34,10 +34,76 @@ function toColonAspect(sizeOrRatio) {
   return r === 'adaptive' ? '16:9' : r
 }
 
-/** Sora2 任务接口 size：竖屏倾向 720x1280，否则横屏 */
-function sora2TaskSize(sizeOrRatio) {
+/**
+ * Sora2 任务 parameters.size：星图侧仅允许四种字面量（非任意 WxH）
+ * @see 报错 invalid_value：Supported values are '720x1280', '1280x720', '1024x1792', '1792x1024'
+ */
+const SORA2_SIZE_PRESETS = [
+  { key: '1280x720', w: 1280, h: 720 },
+  { key: '720x1280', w: 720, h: 1280 },
+  { key: '1792x1024', w: 1792, h: 1024 },
+  { key: '1024x1792', w: 1024, h: 1792 }
+]
+
+/** 面板比例 + 分辨率档位 → 四种之一（文生视频 / 图生视频无首帧像素时的回退） */
+function sora2TaskSizeFromPanel(sizeOrRatio, resolution) {
   const a = toColonAspect(sizeOrRatio)
-  return a === '9:16' || a === '3:4' ? '720x1280' : '1280x720'
+  const portrait = a === '9:16' || a === '3:4'
+  const hi = String(resolution || '').toLowerCase().includes('1080')
+  if (portrait) return hi ? '1024x1792' : '720x1280'
+  return hi ? '1792x1024' : '1280x720'
+}
+
+/** 兼容旧调用：默认按 720p 档 */
+function sora2TaskSize(sizeOrRatio) {
+  return sora2TaskSizeFromPanel(sizeOrRatio, '720p')
+}
+
+/**
+ * 据首帧实际宽高比选最接近的允许 size；再结合 resolution 倾向 720p 档或 1080p 档（两档各横竖一对）
+ */
+function pickSora2I2vSizeFromFramePixels(width, height, resolution) {
+  const w = Number(width)
+  const h = Number(height)
+  if (!w || !h) return sora2TaskSizeFromPanel('16:9', resolution)
+  const hi = String(resolution || '').toLowerCase().includes('1080')
+  const landscape = w >= h
+  const wantLarge = hi
+  let pool = SORA2_SIZE_PRESETS.filter((p) => {
+    const isL = p.w > p.h
+    if (isL !== landscape) return false
+    const large = p.w >= 1792 || p.h >= 1792
+    return wantLarge ? large : !large
+  })
+  if (!pool.length) {
+    pool = SORA2_SIZE_PRESETS.filter((p) => (p.w > p.h) === landscape)
+  }
+  if (!pool.length) pool = [...SORA2_SIZE_PRESETS]
+  const r = w / h
+  let best = pool[0]
+  let bestDiff = Infinity
+  for (const p of pool) {
+    const pr = p.w / p.h
+    const d = Math.abs(Math.log(r / pr))
+    if (d < bestDiff) {
+      bestDiff = d
+      best = p
+    }
+  }
+  return best.key
+}
+
+function resolveSora2I2vParameterSize(params) {
+  const px = String(params.soraI2vPixelSize || '').trim()
+  const m = px.match(/^(\d{1,5})x(\d{1,5})$/)
+  if (m) {
+    const fw = Number(m[1])
+    const fh = Number(m[2])
+    if (fw > 0 && fh > 0) {
+      return pickSora2I2vSizeFromFramePixels(fw, fh, params.resolution)
+    }
+  }
+  return sora2TaskSizeFromPanel(params.size, params.resolution)
 }
 
 /**
@@ -92,14 +158,15 @@ export function buildAstraflowVideoSubmit(params) {
       return {
         model: apiModel,
         input: { prompt },
-        parameters: { size: sora2TaskSize(params.size), duration: d }
+        parameters: {
+          size: sora2TaskSizeFromPanel(params.size, params.resolution),
+          duration: d
+        }
       }
     }
     case 'sora2_i2v': {
       const d = [4, 8, 12].includes(secRaw) ? secRaw : 4
-      const px = String(params.soraI2vPixelSize || '').trim()
-      const size =
-        /^\d{1,5}x\d{1,5}$/.test(px) ? px : sora2TaskSize(params.size)
+      const size = resolveSora2I2vParameterSize(params)
       return {
         model: apiModel,
         input: {

@@ -343,11 +343,11 @@
         <div class="bv-panel" @click.stop>
           <!-- Settings area -->
           <div class="bv-settings">
+            <p v-if="bvIsSora2I2v" class="bv-hint-text" style="margin: 0 0 4px;">Sora2 仅允许四种固定尺寸（1280×720 / 1792×1024 / 720×1280 / 1024×1792），将按每张首帧比例并参考下方比例与清晰度档位选用。</p>
             <!-- Ratio -->
             <div class="bv-section">
               <span class="bv-section-title">比例</span>
-              <p v-if="bvIsSora2I2v" class="bv-hint-text">Sora2 图生视频：每张分镜按对应首帧图像素提交尺寸，无需选择比例。</p>
-              <div v-else class="bv-option-row">
+              <div class="bv-option-row">
                 <button
                   v-for="r in bvRatioList"
                   :key="r"
@@ -387,8 +387,7 @@
             <!-- Resolution -->
             <div class="bv-section">
               <span class="bv-section-title">生成品质</span>
-              <p v-if="bvIsSora2I2v" class="bv-hint-text">该模型由上游按首帧尺寸生成，此处品质选项不参与请求。</p>
-              <div v-else class="bv-option-row">
+              <div class="bv-option-row">
                 <button
                   v-for="res in bvResolutionList"
                   :key="res"
@@ -419,9 +418,7 @@
             </n-dropdown>
 
             <span class="bv-summary">
-              <template v-if="bvIsSora2I2v">随首帧尺寸</template>
-              <template v-else>{{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }}</template>
-              · {{ bvDuration }}s ·
+              {{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }} · {{ bvDuration }}s ·
               <n-icon :size="11"><component :is="bvAudio ? VolumeHighOutline : VolumeMuteOutline" /></n-icon>
             </span>
 
@@ -861,10 +858,8 @@ const bvCreditCost = computed(() => {
   const sceneCount = localScenes.value.length
   let perVideo = 55
   if (bvDuration.value >= 10) perVideo *= 2
-  if (!bvIsSora2I2v.value) {
-    if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
-    else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
-  }
+  if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
+  else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
   if (bvAudio.value) perVideo = Math.ceil(perVideo * 1.2)
   return sceneCount * perVideo
 })
