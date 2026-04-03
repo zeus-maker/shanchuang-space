@@ -42,32 +42,97 @@ export const loadProjects = () => {
   }
 }
 
+/** 单节点文本字段写入 localStorage 的上限（超长截断，避免配额爆满） */
+const MAX_NODE_STRING_PERSIST = 120000
+/** 多图节点保留的远程 URL 条数上限 */
+const MAX_GENERATED_URLS_PERSIST = 24
+
+/**
+ * 深度移除 data: URL、超大字符串（图生视频首帧、分镜图等多为 mega base64）
+ */
+function deepStripHeavyStrings (value, depth = 0) {
+  if (depth > 14) return value
+  if (typeof value === 'string') {
+    if (value.startsWith('data:')) return ''
+    if (value.length > MAX_NODE_STRING_PERSIST * 2) {
+      return `${value.slice(0, MAX_NODE_STRING_PERSIST)}\n…[已截断以节省存储]`
+    }
+    return value
+  }
+  if (value == null || typeof value !== 'object') return value
+  if (Array.isArray(value)) {
+    return value.map((x) => deepStripHeavyStrings(x, depth + 1))
+  }
+  const out = { ...value }
+  for (const k of Object.keys(out)) {
+    const v = out[k]
+    if (typeof v === 'string') {
+      if (v.startsWith('data:')) {
+        delete out[k]
+        continue
+      }
+      if (v.length > MAX_NODE_STRING_PERSIST * 2) {
+        out[k] = `${v.slice(0, MAX_NODE_STRING_PERSIST)}\n…[已截断以节省存储]`
+        continue
+      }
+    } else if (v != null && typeof v === 'object') {
+      out[k] = deepStripHeavyStrings(v, depth + 1)
+    }
+  }
+  return out
+}
+
+const cleanEdgeForStorage = (edge) => {
+  if (!edge?.data) return edge
+  return { ...edge, data: deepStripHeavyStrings({ ...edge.data }) }
+}
+
 /**
  * Clean node data for storage | 清理节点数据用于存储
  * Removes base64 data URLs to reduce storage size | 移除 base64 数据减小存储大小
  */
 const cleanNodeForStorage = (node) => {
   if (!node.data) return node
-  
+
   const cleanedData = { ...node.data }
-  
+
   // Remove base64 data | 移除 base64 数据
   if (cleanedData.base64) {
     delete cleanedData.base64
   }
-  
+
   // If url is a base64 data URL, keep it only if it's from external source | 如果 url 是 base64，只有外部来源才保留
   if (cleanedData.url?.startsWith?.('data:')) {
     // For uploaded images, we can't persist them in localStorage | 上传的图片无法持久化到 localStorage
     delete cleanedData.url
   }
-  
+
   // Remove mask data | 移除蒙版数据
   if (cleanedData.maskData) {
     delete cleanedData.maskData
   }
-  
-  return { ...node, data: cleanedData }
+
+  // 视频 / 预览：data URL 不入库
+  if (cleanedData.thumbnail?.startsWith?.('data:')) delete cleanedData.thumbnail
+  if (cleanedData.selectedUrl?.startsWith?.('data:')) delete cleanedData.selectedUrl
+
+  // 图生视频参数：首帧/尾帧常为 mega base64
+  if (cleanedData.videoGenParams && typeof cleanedData.videoGenParams === 'object') {
+    const vg = { ...cleanedData.videoGenParams }
+    if (vg.first_frame_image?.startsWith?.('data:')) delete vg.first_frame_image
+    if (vg.last_frame_image?.startsWith?.('data:')) delete vg.last_frame_image
+    cleanedData.videoGenParams = vg
+  }
+
+  // 多图结果：去掉 base64，只保留有限条远程链接
+  if (Array.isArray(cleanedData.generatedUrls)) {
+    cleanedData.generatedUrls = cleanedData.generatedUrls
+      .filter((u) => typeof u === 'string' && !u.startsWith('data:'))
+      .slice(0, MAX_GENERATED_URLS_PERSIST)
+  }
+
+  const stripped = deepStripHeavyStrings(cleanedData)
+  return { ...node, data: stripped }
 }
 
 /**
@@ -78,7 +143,8 @@ const cleanProjectForStorage = (project) => {
     ...project,
     canvasData: project.canvasData ? {
       ...project.canvasData,
-      nodes: project.canvasData.nodes?.map(cleanNodeForStorage) || []
+      nodes: project.canvasData.nodes?.map(cleanNodeForStorage) || [],
+      edges: project.canvasData.edges?.map(cleanEdgeForStorage) || []
     } : project.canvasData,
     // Remove base64 thumbnails | 移除 base64 缩略图
     thumbnail: project.thumbnail?.startsWith?.('data:') ? '' : project.thumbnail
@@ -91,38 +157,109 @@ const cleanProjectForStorage = (project) => {
  */
 export const saveProjects = () => {
   // Always clean data before saving | 保存前始终清理数据
-  const cleanedProjects = projects.value.map(cleanProjectForStorage)
-  
+  let cleanedProjects = projects.value.map(cleanProjectForStorage)
+
+  const trySet = (payload) => localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanedProjects))
+    trySet(cleanedProjects)
   } catch (err) {
     if (err.name === 'QuotaExceededError') {
       console.warn('localStorage quota exceeded, attempting aggressive cleanup...')
-      
-      // Remove thumbnails and limit old projects | 移除缩略图并限制旧项目
+
+      // 第二轮：每节点仅保留少量远程图 URL、清空所有缩略图
+      cleanedProjects = cleanedProjects.map((project) => ({
+        ...project,
+        thumbnail: '',
+        canvasData: project.canvasData
+          ? {
+              ...project.canvasData,
+              nodes: project.canvasData.nodes?.map((n) => {
+                const c = cleanNodeForStorage(n)
+                const d = { ...c.data }
+                if (Array.isArray(d.generatedUrls)) {
+                  d.generatedUrls = d.generatedUrls
+                    .filter((u) => typeof u === 'string' && u.startsWith('http'))
+                    .slice(0, 6)
+                }
+                return { ...c, data: deepStripHeavyStrings(d) }
+              }) || [],
+              edges: project.canvasData.edges?.map(cleanEdgeForStorage) || []
+            }
+          : project.canvasData
+      }))
+
+      try {
+        trySet(cleanedProjects)
+        loadProjects()
+        window.$message?.warning('存储空间不足，已压缩画布中的大图与多图链接')
+        return
+      } catch (e2) {
+        console.warn('Second cleanup failed, trimming old projects...', e2)
+      }
+
+      // 第三轮：去掉较早项目的画布实体，只留视口
       const minimalProjects = cleanedProjects.map((project, index) => ({
         ...project,
-        thumbnail: '', // Remove all thumbnails | 移除所有缩略图
-        // Keep only essential canvas data for older projects | 旧项目只保留基本画布数据
-        canvasData: index > 10 ? { nodes: [], edges: [], viewport: project.canvasData?.viewport } : project.canvasData
+        thumbnail: '',
+        canvasData:
+          index > 10
+            ? { nodes: [], edges: [], viewport: project.canvasData?.viewport, canvasGroups: [] }
+            : project.canvasData
       }))
-      
+
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(minimalProjects))
+        trySet(minimalProjects)
+        loadProjects()
         console.log('Saved with aggressive cleanup')
-        window.$message?.warning('存储空间不足，已自动清理部分数据')
+        window.$message?.warning('存储空间不足，已自动清理部分较早项目的画布')
+        return
       } catch (retryErr) {
         console.error('Still failed after aggressive cleanup:', retryErr)
-        // Last resort: only keep first 5 projects | 最后手段：只保留前5个项目
-        try {
-          const essentialProjects = minimalProjects.slice(0, 5)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(essentialProjects))
-          projects.value = projects.value.slice(0, 5)
-          window.$message?.warning('存储空间严重不足，已保留最近 5 个项目')
-        } catch (finalErr) {
-          console.error('Cannot save even minimal data:', finalErr)
-          window.$message?.error('存储失败，请清理浏览器存储空间')
-        }
+      }
+
+      // 第四轮：只保留前 5 个项目
+      try {
+        const essentialProjects = cleanedProjects.slice(0, 5).map((p) => ({
+          ...p,
+          thumbnail: '',
+          canvasData: p.canvasData
+            ? {
+                nodes: [],
+                edges: [],
+                viewport: p.canvasData.viewport,
+                canvasGroups: []
+              }
+            : p.canvasData
+        }))
+        trySet(essentialProjects)
+        projects.value = projects.value.slice(0, 5)
+        loadProjects()
+        window.$message?.warning('存储空间严重不足，已保留最近 5 个项目并清空其画布节点')
+        return
+      } catch (finalErr) {
+        console.error('Cannot save even minimal data:', finalErr)
+      }
+
+      // 第五轮：仅保留 1 个项目壳，避免完全无法写入
+      try {
+        const one = cleanedProjects.slice(0, 1).map((p) => ({
+          ...p,
+          thumbnail: '',
+          canvasData: {
+            nodes: [],
+            edges: [],
+            viewport: p.canvasData?.viewport || { x: 0, y: 0, zoom: 0.8 },
+            canvasGroups: []
+          }
+        }))
+        trySet(one)
+        projects.value = projects.value.slice(0, 1)
+        loadProjects()
+        window.$message?.error('存储配额已满：已仅保留 1 个项目壳，请导出备份后清理浏览器站点数据')
+      } catch (last) {
+        console.error('Cannot save even minimal data:', last)
+        window.$message?.error('存储失败，请在浏览器设置中清理本站点数据或删除其它占用 localStorage 的项')
       }
     } else {
       console.error('Failed to save projects:', err)
