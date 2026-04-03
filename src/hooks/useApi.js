@@ -18,7 +18,9 @@ import {
   usesModelverseGeminiImage,
   resolveModelverseGeminiGenerateContentPathId,
   isGemini25FlashImageModel,
-  buildModelverseGeminiGenerateContentUrl
+  buildModelverseGeminiGenerateContentUrl,
+  shouldUseModelverseDevProxy,
+  toModelverseDevProxyPath
 } from '@/config/models'
 import { getProviderConfig, getDefaultBaseUrl } from '@/config/providers'
 import {
@@ -302,14 +304,15 @@ export const useImageGeneration = () => {
         // Always n=1 per call; multiple images are handled by parallel calls below
         requestData.n = 1
 
-        // 星图 Gemini：Modelverse v1beta generateContent + x-goog-api-key（见 docs/rag/官方文档地址.md → gemini 图模文档）
+        // 星图 Gemini：与 UCloud 文档 curl 一致（v1beta + responseModalities + 3.x 含 tools / imageConfig）
         if (usesModelverseGeminiImage(params.model) && imageProvider === 'astraflow') {
           const pathModelId = resolveModelverseGeminiGenerateContentPathId(params.model)
           const parts = buildModelverseGeminiUserParts(params.prompt, params.image)
           if (parts.length === 0) {
             throw new Error('请填写提示词或连接参考图')
           }
-          const contents = [{ role: 'user', parts }]
+          // 官方示例为 contents: [{ parts: [...] }]；与 gemini-3.1-flash-image 文档 curl 对齐
+          const contents = [{ parts }]
           let generationConfig
           if (isGemini25FlashImageModel(params.model)) {
             generationConfig = { responseModalities: ['TEXT', 'IMAGE'] }
@@ -325,15 +328,30 @@ export const useImageGeneration = () => {
             }
           }
           const body = { contents, generationConfig }
-          const geminiUrl = buildModelverseGeminiGenerateContentUrl(baseUrl, pathModelId)
+          // 3.x 文档 curl 含 tools；2.5 文生图示例无 tools，不附加
+          if (!isGemini25FlashImageModel(params.model)) {
+            body.tools = [{ google_search: {} }]
+          }
+
+          const fullGeminiUrl = buildModelverseGeminiGenerateContentUrl(baseUrl, pathModelId)
+          const useDevProxy = shouldUseModelverseDevProxy(fullGeminiUrl)
+          const geminiUrl = useDevProxy ? toModelverseDevProxyPath(fullGeminiUrl) : fullGeminiUrl
+          // 开发走同源代理可带 x-goog-api-key；生产直连用 Bearer（通常出现在 Access-Control-Allow-Headers 中）
+          const geminiHeaders = useDevProxy
+            ? {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKeyForImage
+              }
+            : {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKeyForImage}`
+              }
+
           const response = await request({
             url: geminiUrl,
             method: 'post',
             data: body,
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKeyForImage
-            }
+            headers: geminiHeaders
           })
           if (response?.error?.message) {
             throw new Error(response.error.message)

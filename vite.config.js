@@ -21,6 +21,12 @@ export default defineConfig({
         target: 'https://api.chatfire.site',
         changeOrigin: true
       },
+      // 星图 Gemini generateContent：避免浏览器直连时 x-goog-api-key 被 CORS 拦截
+      '/__modelverse': {
+        target: 'https://api.modelverse.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/__modelverse/, '')
+      },
       '/api/media': {
         target: 'http://127.0.0.1:8787',
         changeOrigin: true

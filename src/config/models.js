@@ -403,3 +403,23 @@ export function buildModelverseGeminiGenerateContentUrl (baseUrlRaw, pathModelId
   const resource = `/v1beta/models/${encodeURIComponent(modelId)}:generateContent`
   return `${base}${resource}`
 }
+
+/**
+ * 开发环境：浏览器直连 api.modelverse.cn 时带 x-goog-api-key 会触发 CORS 预检失败；
+ * 改为请求同源路径 /__modelverse/...，由 Vite 代理转发到官方域名（见 vite.config.js）。
+ */
+export function shouldUseModelverseDevProxy (absoluteUrl) {
+  if (typeof import.meta === 'undefined' || !import.meta.env?.DEV) return false
+  if (import.meta.env?.VITE_DISABLE_MODELVERSE_PROXY === '1') return false
+  try {
+    const u = new URL(absoluteUrl)
+    return u.hostname === 'api.modelverse.cn' || u.hostname.endsWith('.modelverse.cn')
+  } catch {
+    return false
+  }
+}
+
+export function toModelverseDevProxyPath (absoluteUrl) {
+  const u = new URL(absoluteUrl)
+  return `/__modelverse${u.pathname}${u.search}`
+}
