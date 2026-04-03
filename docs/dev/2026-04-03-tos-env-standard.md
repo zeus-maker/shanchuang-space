@@ -1,17 +1,15 @@
-# 火山 TOS 环境变量：对齐 TOS_* 与对象前缀
+# 火山 TOS 环境变量：统一 VOLCENGINE_TOS_*
 
 ## 背景与原因
 
-团队其它服务已采用 **`TOS_ACCESS_KEY` / `TOS_SECRET_KEY` / `TOS_BUCKET` / `TOS_REGION` / `TOS_ENDPOINT`** 及 **`TOS_OBJECT_PREFIX`** 五项（加前缀）配置对象存储。媒体服务原先仅识别 **`VOLCENGINE_TOS_*`**，与现有运维习惯不一致，且无法在桶内统一业务前缀。
+Sora 首帧上传需读项目根 **`.env`**。曾并行支持 **`TOS_*`** 与 **`VOLCENGINE_TOS_*`**，与仓库既有「火山」前缀命名不一致；按产品要求**只保留 `VOLCENGINE_TOS_*`**，避免两套配置并存。
 
 ## 修改点
 
-- **`server/index.mjs`**：`getTosRuntime` **优先读取 `TOS_*`**，缺省再回退 **`VOLCENGINE_TOS_*`**；`TOS_ENDPOINT` 支持带 **`https://`**；新增 **`TOS_OBJECT_PREFIX`**（及兼容 **`VOLCENGINE_TOS_OBJECT_PREFIX`**），对象键为 **`{prefix}/sora-i2v-frames/{projectId}/{uuid}.ext`**，无前缀时与旧行为一致。
-- **`buildTosPublicObjectUrl`**：自定义公网前缀支持 **`TOS_PUBLIC_BASE_URL`**，并保留 **`VOLCENGINE_TOS_PUBLIC_BASE_URL`**。
-- **README**、**`.env.example`**：以 `TOS_*` 为主表，旧变量标为兼容。
+- **`server/index.mjs`**：`getTosRuntime` / **`buildTosPublicObjectUrl`** 仅读取 **`VOLCENGINE_TOS_*`**（含 **`VOLCENGINE_TOS_OBJECT_PREFIX`**、**`VOLCENGINE_TOS_ENDPOINT`** 可带 `https://`）。
+- **`.env` / `.env.example` / README**：示例与说明表仅列 **`VOLCENGINE_TOS_*`**。
 
 ## 复盘
 
-- 密钥、桶名仅通过环境变量注入，**不得**写入仓库与留档正文。
-- 媒体服务启动时使用 **`dotenv`** 加载项目根 **`.env`**，便于与 Vite 共用同一文件配置 **`TOS_*`**（`dotenv` 默认不覆盖已在环境中设置的变量）。
-- **涉及模块**：`server/index.mjs`、`README.md`、`.env.example`、`package.json`。
+- 密钥勿入库；媒体服务仍用 **dotenv** 加载根目录 `.env`。
+- **涉及模块**：`server/index.mjs`、`README.md`、`.env.example`。
