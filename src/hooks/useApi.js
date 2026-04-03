@@ -102,10 +102,15 @@ function extractGeminiImageParts(response) {
     const parts = c?.content?.parts || []
     for (const p of parts) {
       if (p?.thought) continue
-      const data = p?.inlineData?.data
-      const mime = p?.inlineData?.mimeType || 'image/png'
+      const inline = p?.inlineData || p?.inline_data
+      const data = inline?.data
+      const mime = inline?.mimeType || inline?.mime_type || 'image/png'
       if (data) {
-        out.push({ url: `data:${mime};base64,${data}`, revisedPrompt: '' })
+        const raw = String(data).trim().replace(/\s+/g, '')
+        const url = raw.startsWith('data:')
+          ? raw
+          : `data:${mime};base64,${raw}`
+        out.push({ url, revisedPrompt: '' })
       }
     }
   }

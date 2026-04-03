@@ -3,6 +3,7 @@
  * 适配不同 API 提供商的请求参数和响应格式
  */
 
+import { normalizeInlineImageUrl } from '@/utils/normalizeInlineImageUrl.js'
 import { getModelByName } from './models'
 
 /** 星图（UCloud Modelverse）保存 API 设置时的默认模型，与 PRD 对齐 */
@@ -476,7 +477,9 @@ export const PROVIDERS = {
       image: (response) => {
         const data = response.data || response
         return (Array.isArray(data) ? data : [data]).map(item => ({
-          url: item.url || item.b64_json || '',
+          url: normalizeInlineImageUrl(
+            item.url || item.b64_json || item.b64Json || ''
+          ),
           revisedPrompt: item.revised_prompt || ''
         }))
       },
@@ -546,7 +549,9 @@ export const PROVIDERS = {
       image: (response) => {
         const data = response.data || response
         return (Array.isArray(data) ? data : [data]).map(item => ({
-          url: item.url || item.b64_json || '',
+          url: normalizeInlineImageUrl(
+            item.url || item.b64_json || item.b64Json || ''
+          ),
           revisedPrompt: item.revised_prompt || ''
         }))
       },
@@ -638,7 +643,9 @@ export const PROVIDERS = {
       image: (response) => {
         const data = response.data || response
         return (Array.isArray(data) ? data : [data]).map(item => ({
-          url: item.url || item.b64_json || '',
+          url: normalizeInlineImageUrl(
+            item.url || item.b64_json || item.b64Json || ''
+          ),
           revisedPrompt: item.revised_prompt || ''
         }))
       },
@@ -706,7 +713,9 @@ export const PROVIDERS = {
       image: (response) => {
         const data = response.data || response
         return (Array.isArray(data) ? data : [data]).map(item => ({
-          url: item.url || item.b64_json || '',
+          url: normalizeInlineImageUrl(
+            item.url || item.b64_json || item.b64Json || ''
+          ),
           revisedPrompt: item.revised_prompt || ''
         }))
       },

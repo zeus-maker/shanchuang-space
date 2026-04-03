@@ -414,6 +414,7 @@ import {
 import { useImageGeneration } from '../../hooks'
 import { updateNode, addNode, addEdge, nodes, edges, duplicateNode, removeNode, currentProjectId } from '../../stores/canvas'
 import { cacheRemoteToServer, cacheDataUrlToServer, mediaFileUrlFromKey, headLocalMedia } from '@/utils/localMediaServer'
+import { normalizeInlineImageUrl } from '@/utils/normalizeInlineImageUrl.js'
 import {
   buildImagePreviewUrls,
   getGeneratedUrlList,
@@ -1060,7 +1061,8 @@ const handleGenerate = async () => {
       const localKeys = []
       const persistUrls = []
       let dataUrlCacheMiss = false
-      for (const u of rawUrls) {
+      for (const raw of rawUrls) {
+        const u = normalizeInlineImageUrl(raw)
         if (!pid || typeof u !== 'string') {
           localKeys.push(null)
           persistUrls.push(u)
