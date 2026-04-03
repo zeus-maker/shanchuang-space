@@ -32,6 +32,6 @@
 
 - **`docs/todo/2-星图集成PRD.md`** 第 8–55 行所列星图图模、视频模已写入 **`src/config/models.js`**（`ASTRAFLOW_IMAGE_MODELS` / `ASTRAFLOW_VIDEO_MODELS`），`key` 与 **UCloudDoc-Team/modelverse** 文档中的 `model` 对齐；Vidu 等同场景多条目共用平台 model 时，使用 **UI 专用 key** + **`submitModel`** + **`modelverseTaskStyle`**（及 Vidu 的 **`modelverseViduType`**）。
 - **`buildAstraflowVideoSubmit`**（`src/config/providers.js`）按 `modelverseTaskStyle` 组装 `/v1/tasks/submit`：**OpenAI Sora2 任务**、**Wan**、**MiniMax Hailuo**、**可灵 Kling**、**Veo 3.1**、**Vidu 各子类型**、**Seedance** 等分支与文档字段对齐；未识别样式时回退为旧版通用 `input.content` 体（可能不适用于部分厂商）。
-- **Gemini 多图模**：`usesModelverseGeminiImage` 使用正则 `^gemini-.+image`，生图 URL 为 `/v1beta/models/{encodeURIComponent(model)}:generateContent`。
+- **Gemini 多图模**：`usesModelverseGeminiImage` 使用正则 `^gemini-.+image`，生图 URL 为 `/v1beta/models/{encodeURIComponent(路径模型 ID)}:generateContent`；路径 ID 经 `resolveModelverseGeminiGenerateContentPathId` 与 UCloud 文档一致（如 Pro → `gemini-3-pro-image-preview`），请求体按 2.5 / 3.x 文档拆分（见 `docs/dev/2026-04-03-modelverse-gemini-generatecontent-align.md`）。
 - **`sora-2`（OpenAI 官方 /v1/videos + multipart）**：画布侧 **显式拦截**（`modelverseTaskStyle: openai_videos`），提示改用 Sora2 文生/图生 **任务** 模型；完整 multipart 串联可后续单独立项。
 - **边界**：Vidu 延长 / 对口型 / MV 等依赖 **视频 URL、音频 URL** 等，当前仍主要复用首帧/尾帧连接位传递 URL，复杂表单需在节点层继续扩展；各模型时长/分辨率枚举与文档不完全一致时以接口返回为准逐步收紧配置项。

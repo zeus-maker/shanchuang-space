@@ -359,3 +359,21 @@ export const usesVolcengineVideoApi = (modelKey) =>
 /** 星图 Gemini 生图：走 Modelverse generateContent + x-goog-api-key，非 OpenAI images 接口 */
 export const usesModelverseGeminiImage = (modelKey) =>
     typeof modelKey === 'string' && /^gemini-.+image/i.test(modelKey)
+
+/**
+ * 画布模型 key → generateContent URL 中的模型 ID（与 UCloudDoc-Team/modelverse 文档 curl 一致）
+ * 例：gemini-3-pro-image → gemini-3-pro-image-preview
+ */
+export const MODELVERSE_GEMINI_GENERATE_CONTENT_PATH_ID = {
+  'gemini-3-pro-image': 'gemini-3-pro-image-preview'
+}
+
+export function resolveModelverseGeminiGenerateContentPathId (modelKey) {
+  if (typeof modelKey !== 'string') return modelKey
+  return MODELVERSE_GEMINI_GENERATE_CONTENT_PATH_ID[modelKey] || modelKey
+}
+
+/** Gemini 2.5 Flash Image：官方示例仅含 responseModalities，不含 imageConfig */
+export function isGemini25FlashImageModel (modelKey) {
+  return typeof modelKey === 'string' && modelKey === 'gemini-2.5-flash-image'
+}

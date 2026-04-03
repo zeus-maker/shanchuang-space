@@ -15,7 +15,9 @@ import {
   getModelByName,
   usesVolcengineImageApi,
   usesVolcengineVideoApi,
-  usesModelverseGeminiImage
+  usesModelverseGeminiImage,
+  resolveModelverseGeminiGenerateContentPathId,
+  isGemini25FlashImageModel
 } from '@/config/models'
 import { getProviderConfig, getDefaultBaseUrl } from '@/config/providers'
 import {
@@ -45,6 +47,35 @@ function mapBananaSizeToGeminiAspect(sizeKey) {
     '9x16': '9:16'
   }
   return m[sizeKey] || '1:1'
+}
+
+/** 组装 generateContent 的 user.parts：提示词 + 参考图（inlineData / fileData，对齐 Modelverse 文档） */
+function buildModelverseGeminiUserParts (prompt, refImages) {
+  const parts = []
+  const text = (prompt || '').trim()
+  if (text) parts.push({ text })
+  const list = Array.isArray(refImages) ? refImages : refImages ? [refImages] : []
+  for (const img of list) {
+    if (img == null || img === '') continue
+    const s = String(img).trim()
+    if (!s) continue
+    const dataUrl = s.match(/^data:([^;]+);base64,(.+)$/is)
+    if (dataUrl) {
+      parts.push({ inlineData: { mimeType: dataUrl[1], data: dataUrl[2] } })
+      continue
+    }
+    if (/^https?:\/\//i.test(s)) {
+      const path = s.split('?')[0].toLowerCase()
+      let mime = 'image/jpeg'
+      if (path.endsWith('.png')) mime = 'image/png'
+      else if (path.endsWith('.webp')) mime = 'image/webp'
+      else if (path.endsWith('.gif')) mime = 'image/gif'
+      parts.push({ fileData: { mimeType: mime, fileUri: s } })
+      continue
+    }
+    parts.push({ inlineData: { mimeType: 'image/png', data: s } })
+  }
+  return parts
 }
 
 /** 解析 Modelverse Gemini generateContent 响应为与 OpenAI 生图一致的 { url } 列表 */
@@ -270,21 +301,30 @@ export const useImageGeneration = () => {
         // Always n=1 per call; multiple images are handled by parallel calls below
         requestData.n = 1
 
-        // 星图 Gemini：Modelverse v1beta generateContent + x-goog-api-key
+        // 星图 Gemini：Modelverse v1beta generateContent + x-goog-api-key（见 docs/rag/官方文档地址.md → gemini 图模文档）
         if (usesModelverseGeminiImage(params.model) && imageProvider === 'astraflow') {
-          const aspect = mapBananaSizeToGeminiAspect(
-            params.size || modelConfig?.defaultParams?.size || '1x1'
-          )
-          const q = params.quality || modelConfig?.defaultParams?.quality
-          const imageSize = q === '4k' ? '4K' : '1K'
-          const body = {
-            contents: [{ parts: [{ text: params.prompt || '' }] }],
-            generationConfig: {
+          const pathModelId = resolveModelverseGeminiGenerateContentPathId(params.model)
+          const parts = buildModelverseGeminiUserParts(params.prompt, params.image)
+          if (parts.length === 0) {
+            throw new Error('请填写提示词或连接参考图')
+          }
+          const contents = [{ role: 'user', parts }]
+          let generationConfig
+          if (isGemini25FlashImageModel(params.model)) {
+            generationConfig = { responseModalities: ['TEXT', 'IMAGE'] }
+          } else {
+            const aspect = mapBananaSizeToGeminiAspect(
+              params.size || modelConfig?.defaultParams?.size || '1x1'
+            )
+            const q = params.quality || modelConfig?.defaultParams?.quality
+            const imageSize = q === '4k' ? '4K' : '1K'
+            generationConfig = {
               responseModalities: ['TEXT', 'IMAGE'],
               imageConfig: { aspectRatio: aspect, imageSize }
             }
           }
-          const geminiId = encodeURIComponent(params.model)
+          const body = { contents, generationConfig }
+          const geminiId = encodeURIComponent(pathModelId)
           const geminiPath = `/v1beta/models/${geminiId}:generateContent`
           const geminiUrl = `${String(baseUrl).replace(/\/$/, '')}${geminiPath}`
           const response = await request({
