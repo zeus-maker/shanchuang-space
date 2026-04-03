@@ -413,7 +413,7 @@ import {
 } from '@vicons/ionicons5'
 import { useImageGeneration } from '../../hooks'
 import { updateNode, addNode, addEdge, nodes, edges, duplicateNode, removeNode, currentProjectId } from '../../stores/canvas'
-import { cacheRemoteToServer, headLocalMedia } from '@/utils/localMediaServer'
+import { cacheRemoteToServer, cacheDataUrlToServer, mediaFileUrlFromKey, headLocalMedia } from '@/utils/localMediaServer'
 import {
   buildImagePreviewUrls,
   getGeneratedUrlList,
@@ -1055,15 +1055,43 @@ const handleGenerate = async () => {
     const result = await generate(params)
 
     if (result && result.length > 0) {
-      const urls = result.map(r => r.url).filter(Boolean)
+      const rawUrls = result.map(r => r.url).filter(Boolean)
       const pid = currentProjectId.value
-      const localKeys = pid
-        ? await Promise.all(urls.map((u) => cacheRemoteToServer(pid, u, 'image')))
-        : urls.map(() => null)
+      const localKeys = []
+      const persistUrls = []
+      let dataUrlCacheMiss = false
+      for (const u of rawUrls) {
+        if (!pid || typeof u !== 'string') {
+          localKeys.push(null)
+          persistUrls.push(u)
+          continue
+        }
+        if (u.startsWith('data:')) {
+          const k = await cacheDataUrlToServer(pid, u)
+          localKeys.push(k)
+          if (k) persistUrls.push(mediaFileUrlFromKey(k))
+          else {
+            dataUrlCacheMiss = true
+            persistUrls.push(u)
+          }
+        } else if (u.startsWith('http://') || u.startsWith('https://')) {
+          const k = await cacheRemoteToServer(pid, u, 'image')
+          localKeys.push(k)
+          persistUrls.push(u)
+        } else {
+          localKeys.push(null)
+          persistUrls.push(u)
+        }
+      }
+      if (dataUrlCacheMiss) {
+        window.$message?.warning(
+          '部分结果为内联图未写入本地缓存：请运行媒体服务（npm run server）后点保存，否则刷新后可能不显示。'
+        )
+      }
       updateNode(props.id, {
-        generatedUrls: urls,
+        generatedUrls: persistUrls,
         generatedLocalKeys: localKeys,
-        selectedUrl: urls[0],
+        selectedUrl: persistUrls[0],
         mainImageIndex: 0,
         executed: true,
         updatedAt: Date.now()

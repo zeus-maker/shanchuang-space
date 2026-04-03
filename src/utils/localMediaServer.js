@@ -70,6 +70,34 @@ export async function cacheRemoteToServer (projectId, sourceUrl, kind = 'image')
 }
 
 /**
+ * 将 data URL 写入本地 uploads（Gemini 等返回 inline base64，localStorage 不能存 data:）
+ * @returns {Promise<string|null>} localKey
+ */
+export async function cacheDataUrlToServer (projectId, dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+    return null
+  }
+  const base = getMediaApiBase()
+  const url = base ? `${base}/api/media/cache` : '/api/media/cache'
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: projectId || 'default',
+        dataUrl,
+        kind: 'image'
+      })
+    })
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok || !data.ok || !data.localKey) return null
+    return data.localKey
+  } catch {
+    return null
+  }
+}
+
+/**
  * 图片预览 URL：有本地 key 则优先本地，否则用远程
  */
 export function resolveImagePreviewUrl (sourceUrl, localKey) {

@@ -47,6 +47,39 @@ const MAX_NODE_STRING_PERSIST = 120000
 /** 多图节点保留的远程 URL 条数上限 */
 const MAX_GENERATED_URLS_PERSIST = 24
 
+/** 可持久化的图片 URL（非 data/blob）；与 generatedLocalKeys 按下标成对保留 */
+function zipPersistableGeneratedAssets (generatedUrls, generatedLocalKeys, maxCount = MAX_GENERATED_URLS_PERSIST) {
+  const urls = Array.isArray(generatedUrls) ? generatedUrls : []
+  const keys = Array.isArray(generatedLocalKeys) ? generatedLocalKeys : []
+  const n = Math.max(urls.length, keys.length)
+  const pairs = []
+  for (let i = 0; i < n; i++) {
+    const u = urls[i]
+    const k = keys[i]
+    if (typeof u !== 'string' || !u.trim()) continue
+    const t = u.trim()
+    if (t.startsWith('data:') || t.startsWith('blob:')) continue
+    pairs.push({ u: t, k: typeof k === 'string' && k ? k : null })
+  }
+  const cap = Math.max(0, Number(maxCount) || MAX_GENERATED_URLS_PERSIST)
+  const sliced = pairs.slice(0, cap)
+  return {
+    generatedUrls: sliced.map((p) => p.u),
+    generatedLocalKeys: sliced.map((p) => p.k)
+  }
+}
+
+function isPersistableImageRef (u) {
+  if (typeof u !== 'string' || !u.trim()) return false
+  const t = u.trim()
+  if (t.startsWith('data:') || t.startsWith('blob:')) return false
+  return (
+    t.startsWith('http://') ||
+    t.startsWith('https://') ||
+    t.startsWith('/api/')
+  )
+}
+
 /**
  * 深度移除 data: URL、超大字符串（图生视频首帧、分镜图等多为 mega base64）
  */
@@ -124,12 +157,13 @@ const cleanNodeForStorage = (node) => {
     cleanedData.videoGenParams = vg
   }
 
-  // 多图结果：去掉 base64，只保留有限条远程链接
-  if (Array.isArray(cleanedData.generatedUrls)) {
-    cleanedData.generatedUrls = cleanedData.generatedUrls
-      .filter((u) => typeof u === 'string' && !u.startsWith('data:'))
-      .slice(0, MAX_GENERATED_URLS_PERSIST)
-  }
+  // 多图结果：去掉 data/blob，keys 与 urls 成对截断（避免长度不一致导致预览全走失效外链）
+  const zipped = zipPersistableGeneratedAssets(
+    cleanedData.generatedUrls,
+    cleanedData.generatedLocalKeys
+  )
+  cleanedData.generatedUrls = zipped.generatedUrls
+  cleanedData.generatedLocalKeys = zipped.generatedLocalKeys
 
   const stripped = deepStripHeavyStrings(cleanedData)
   return { ...node, data: stripped }
@@ -177,11 +211,12 @@ export const saveProjects = () => {
               nodes: project.canvasData.nodes?.map((n) => {
                 const c = cleanNodeForStorage(n)
                 const d = { ...c.data }
-                if (Array.isArray(d.generatedUrls)) {
-                  d.generatedUrls = d.generatedUrls
-                    .filter((u) => typeof u === 'string' && u.startsWith('http'))
-                    .slice(0, 6)
-                }
+                const z = zipPersistableGeneratedAssets(d.generatedUrls, d.generatedLocalKeys, 6)
+                const pairs = z.generatedUrls
+                  .map((u, i) => ({ u, k: z.generatedLocalKeys[i] }))
+                  .filter((p) => isPersistableImageRef(p.u))
+                d.generatedUrls = pairs.map((p) => p.u).slice(0, 6)
+                d.generatedLocalKeys = pairs.map((p) => p.k).slice(0, 6)
                 return { ...c, data: deepStripHeavyStrings(d) }
               }) || [],
               edges: project.canvasData.edges?.map(cleanEdgeForStorage) || []

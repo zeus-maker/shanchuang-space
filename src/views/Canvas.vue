@@ -1154,6 +1154,7 @@ const runGroupExecuteForNodeIds = async (executable, { closeModalOnSuccess = fal
   const failedCount = results.filter(r => r.status === 'rejected').length
   if (!failedCount) {
     window.$message?.success('整组执行已完成')
+    saveProject()
     if (closeModalOnSuccess) showGroupExecuteModal.value = false
     if (closeBatchImagePanelOnSuccess) showBatchImageExecutePanel.value = false
   } else {
@@ -1194,6 +1195,13 @@ const isTypingInFocusedField = () => {
 
 /** 画布快捷键：撤销/重做（与 store undo/redo 一致）；输入框内不触发 */
 const handleCanvasGlobalKeydown = (e) => {
+  if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+    if (isTypingInFocusedField()) return
+    e.preventDefault()
+    saveProject()
+    window.$message?.success('已保存当前项目')
+    return
+  }
   const mod = e.metaKey || e.ctrlKey
   if (mod && e.key === 'z') {
     if (isTypingInFocusedField()) return

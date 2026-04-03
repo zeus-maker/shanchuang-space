@@ -215,6 +215,58 @@ app.post('/api/media/sora-frame-upload', express.json({ limit: '25mb' }), async 
   }
 })
 
+/**
+ * POST — 远程下载或 data URL 落盘（与前端文生图持久化一致；大 body 须在本路由单独 25mb，避免全局 2mb 413）
+ * body: { projectId, sourceUrl?, dataUrl?, kind?: 'image'|'video' } — sourceUrl 与 dataUrl 二选一
+ */
+app.post('/api/media/cache', express.json({ limit: '25mb' }), async (req, res) => {
+  const { projectId, sourceUrl, dataUrl, kind } = req.body || {}
+  const pid = sanitizeProjectId(projectId)
+  const dir = path.join(MEDIA_ROOT, pid)
+  await fs.mkdir(dir, { recursive: true })
+
+  let buf
+  let extFromData = null
+  if (dataUrl && typeof dataUrl === 'string') {
+    const parsed = parseImageDataUrl(dataUrl)
+    if (!parsed?.buf?.length) {
+      return res.status(400).json({ ok: false, error: 'invalid dataUrl' })
+    }
+    buf = parsed.buf
+    extFromData = parsed.ext
+  } else if (sourceUrl && typeof sourceUrl === 'string' && isHttpUrl(sourceUrl)) {
+    let r
+    try {
+      r = await fetch(sourceUrl, {
+        redirect: 'follow',
+        headers: { 'User-Agent': 'shanchuang-space-media-cache/1.0' }
+      })
+    } catch (e) {
+      return res.status(502).json({ ok: false, error: String(e?.message || e) })
+    }
+    if (!r.ok) {
+      return res.status(502).json({ ok: false, error: `upstream ${r.status}` })
+    }
+    buf = Buffer.from(await r.arrayBuffer())
+    const ct = r.headers.get('content-type') || ''
+    const ext = extFromMime(ct, kind)
+    const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24)
+    const filename = `${hash}.${ext}`
+    const full = path.join(dir, filename)
+    await fs.writeFile(full, buf)
+    return res.json({ ok: true, localKey: `${pid}/${filename}` })
+  } else {
+    return res.status(400).json({ ok: false, error: 'need valid sourceUrl or dataUrl' })
+  }
+
+  const ext = extFromData || extFromMime('', kind)
+  const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24)
+  const filename = `${hash}.${ext}`
+  const full = path.join(dir, filename)
+  await fs.writeFile(full, buf)
+  res.json({ ok: true, localKey: `${pid}/${filename}` })
+})
+
 app.use(express.json({ limit: '2mb' }))
 
 /** 健康检查 */
@@ -254,39 +306,6 @@ app.get('/api/media/file/:projectId/:filename', async (req, res) => {
   } catch {
     res.status(404).end()
   }
-})
-
-/**
- * POST — 从远程 URL 下载并落盘
- * body: { projectId, sourceUrl, kind?: 'image'|'video' }
- */
-app.post('/api/media/cache', async (req, res) => {
-  const { projectId, sourceUrl, kind } = req.body || {}
-  if (!sourceUrl || typeof sourceUrl !== 'string' || !isHttpUrl(sourceUrl)) {
-    return res.status(400).json({ ok: false, error: 'invalid sourceUrl' })
-  }
-  const pid = sanitizeProjectId(projectId)
-  const dir = path.join(MEDIA_ROOT, pid)
-  await fs.mkdir(dir, { recursive: true })
-
-  let r
-  try {
-    r = await fetch(sourceUrl, { redirect: 'follow', headers: { 'User-Agent': 'shanchuang-space-media-cache/1.0' } })
-  } catch (e) {
-    return res.status(502).json({ ok: false, error: String(e?.message || e) })
-  }
-  if (!r.ok) {
-    return res.status(502).json({ ok: false, error: `upstream ${r.status}` })
-  }
-  const buf = Buffer.from(await r.arrayBuffer())
-  const ct = r.headers.get('content-type') || ''
-  const ext = extFromMime(ct, kind)
-  const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24)
-  const filename = `${hash}.${ext}`
-  const full = path.join(dir, filename)
-  await fs.writeFile(full, buf)
-  const localKey = `${pid}/${filename}`
-  res.json({ ok: true, localKey })
 })
 
 if (SERVE_STATIC) {
