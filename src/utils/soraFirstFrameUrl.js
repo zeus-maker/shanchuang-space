@@ -14,14 +14,14 @@ export function isPublicHttpImageUrl (s) {
 /**
  * @param {string} raw - 公网 URL 或 data:image/*;base64,...
  * @param {{ projectId?: string }} [opts]
- * @returns {Promise<string>}
+ * @returns {Promise<{ url: string, width?: number, height?: number }>} 上传首帧时可能带服务端解析的宽高
  */
 export async function ensurePublicUrlForSoraFirstFrame (raw, opts = {}) {
   if (!raw || typeof raw !== 'string') {
     throw new Error('Sora 图生视频需要首帧图片。')
   }
   const s = raw.trim()
-  if (isPublicHttpImageUrl(s)) return s
+  if (isPublicHttpImageUrl(s)) return { url: s }
 
   if (!/^data:image\/[\w+.-]+;base64,/i.test(s)) {
     throw new Error(
@@ -31,8 +31,8 @@ export async function ensurePublicUrlForSoraFirstFrame (raw, opts = {}) {
 
   const base = getMediaApiBase()
   const path = '/api/media/sora-frame-upload'
-  const url = base ? `${base}${path}` : path
-  const r = await fetch(url, {
+  const fetchUrl = base ? `${base}${path}` : path
+  const r = await fetch(fetchUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -51,5 +51,13 @@ export async function ensurePublicUrlForSoraFirstFrame (raw, opts = {}) {
       `${hint} 也可在节点中直接使用公网图片 URL 作为首帧。`
     )
   }
-  return String(data.url).trim()
+  const publicUrl = String(data.url).trim()
+  const width = Number(data.width)
+  const height = Number(data.height)
+  const out = { url: publicUrl }
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    out.width = Math.round(width)
+    out.height = Math.round(height)
+  }
+  return out
 }

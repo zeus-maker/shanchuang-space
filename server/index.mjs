@@ -68,6 +68,64 @@ function parseImageDataUrl (dataUrl) {
   return { buf, mime, ext }
 }
 
+/**
+ * 从图片二进制头部解析宽高（不上传前即可得到，供 Sora i2v 与首帧像素对齐）
+ * 支持常见 PNG / JPEG / WebP（VP8X）；失败返回 null
+ */
+function readRasterImageDimensions (buf) {
+  if (!buf || buf.length < 24) return null
+  // PNG IHDR
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  ) {
+    const w = buf.readUInt32BE(16)
+    const h = buf.readUInt32BE(20)
+    if (w > 0 && h > 0 && w < 1e5 && h < 1e5) return { width: w, height: h }
+    return null
+  }
+  // JPEG SOF*
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2
+    while (i < buf.length - 9) {
+      if (buf[i] !== 0xff) {
+        i++
+        continue
+      }
+      const marker = buf[i + 1]
+      if (marker === 0xd8 || marker === 0xd9) {
+        i += 2
+        continue
+      }
+      if (marker === 0xda) break
+      const segLen = buf.readUInt16BE(i + 2)
+      if (segLen < 2 || i + 2 + segLen > buf.length) break
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        const h = buf.readUInt16BE(i + 5)
+        const w = buf.readUInt16BE(i + 7)
+        if (w > 0 && h > 0 && w < 1e5 && h < 1e5) return { width: w, height: h }
+        return null
+      }
+      i += 2 + segLen
+    }
+    return null
+  }
+  // WebP VP8X（动画/扩展常见）
+  if (
+    buf.length >= 30 &&
+    buf.toString('ascii', 0, 4) === 'RIFF' &&
+    buf.toString('ascii', 8, 12) === 'WEBP' &&
+    buf.toString('ascii', 12, 16) === 'VP8X'
+  ) {
+    const w = 1 + buf.readUIntLE(24, 3)
+    const h = 1 + buf.readUIntLE(27, 3)
+    if (w > 0 && h > 0 && w < 1e5 && h < 1e5) return { width: w, height: h }
+  }
+  return null
+}
+
 /** TOS 对象键前缀：仅允许安全字符，多段用 / 分隔 */
 function sanitizeTosObjectPrefix (raw) {
   if (!raw || typeof raw !== 'string') return ''
@@ -136,6 +194,7 @@ app.post('/api/media/sora-frame-upload', express.json({ limit: '25mb' }), async 
   const subKey = `sora-i2v-frames/${pid}/${crypto.randomUUID()}.${parsed.ext}`
   const key = tos.objectPrefix ? `${tos.objectPrefix}/${subKey}` : subKey
   try {
+    const dims = readRasterImageDimensions(parsed.buf)
     await tos.client.putObject({
       bucket: tos.bucket,
       key,
@@ -144,7 +203,12 @@ app.post('/api/media/sora-frame-upload', express.json({ limit: '25mb' }), async 
       acl: ACLType.ACLPublicRead
     })
     const url = buildTosPublicObjectUrl(tos.bucket, tos.region, key)
-    res.json({ ok: true, url })
+    const payload = { ok: true, url }
+    if (dims?.width > 0 && dims?.height > 0) {
+      payload.width = dims.width
+      payload.height = dims.height
+    }
+    res.json(payload)
   } catch (e) {
     console.error('[media-server] sora-frame-upload', e)
     res.status(502).json({ ok: false, error: String(e?.message || e) })

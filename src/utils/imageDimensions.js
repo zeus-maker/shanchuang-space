@@ -42,9 +42,7 @@ export function loadImageNaturalSize (src) {
       cleanup()
       reject(new Error('image load failed'))
     }
-    if (/^https?:\/\//i.test(s)) {
-      img.crossOrigin = 'anonymous'
-    }
+    // 仅读 naturalWidth/Height，不绘制到 canvas，无需 CORS；设 anonymous 时若 CDN 未返回 ACAO 会导致 onerror，误回退固定尺寸（如 Sora i2v）
     img.src = s
   })
 }

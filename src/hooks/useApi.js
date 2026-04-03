@@ -474,10 +474,18 @@ export const useVideoGeneration = () => {
       modelConfig?.modelverseTaskStyle === 'sora2_i2v' &&
       requestData.first_frame_image
     ) {
-      requestData.first_frame_image = await ensurePublicUrlForSoraFirstFrame(
+      const ensured = await ensurePublicUrlForSoraFirstFrame(
         requestData.first_frame_image,
         { projectId: params.projectId || currentProjectId.value || 'default' }
       )
+      requestData.first_frame_image = ensured.url
+      if (
+        !requestData.soraI2vPixelSize &&
+        ensured.width > 0 &&
+        ensured.height > 0
+      ) {
+        requestData.soraI2vPixelSize = `${ensured.width}x${ensured.height}`
+      }
       if (!requestData.soraI2vPixelSize) {
         const abs = resolveImageSrcForNaturalSize(requestData.first_frame_image)
         try {

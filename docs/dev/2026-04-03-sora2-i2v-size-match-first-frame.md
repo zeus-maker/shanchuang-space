@@ -18,3 +18,8 @@
 ## 复盘
 
 - 单节点视频面板若仍暴露与 Sora2 i2v 不符的比例选项，可再与节点侧配置对齐；本次优先覆盖 **批量生成** 与 **提交体尺寸** 主路径。
+
+## 补充：避免误回退 720×1280
+
+- **`loadImageNaturalSize`** 对 http(s) 不再默认设置 **`crossOrigin = 'anonymous'`**。仅读取 `naturalWidth` / `naturalHeight` 时不需要 CORS；此前 TOS 公网图未配 ACAO 会导致 `Image` 加载失败，从而始终走 **`sora2TaskSize`** 固定尺寸。
+- **`POST /api/media/sora-frame-upload`**：上传前在服务端从 buffer 解析 **PNG / JPEG / WebP（VP8X）** 宽高，响应中增加 **`width` / `height`**；**`ensurePublicUrlForSoraFirstFrame`** 返回 **`{ url, width?, height? }`**，`createVideoTaskOnly` 优先用其写入 **`soraI2vPixelSize`**，再必要时才用浏览器读图。
