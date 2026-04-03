@@ -41,6 +41,16 @@ import { ensurePublicUrlForSoraFirstFrame } from '@/utils/soraFirstFrameUrl.js'
 import { currentProjectId } from '@/stores/canvas'
 import { loadImageNaturalSize, pickClosestBananaSizeKey } from '@/utils/imageDimensions.js'
 
+/** 读取首帧像素尺寸前，将相对 URL 补成当前页 origin（便于 /api/media 等同源图） */
+function resolveImageSrcForNaturalSize (src) {
+  if (typeof window === 'undefined') return String(src || '').trim()
+  const s = String(src || '').trim()
+  if (!s || s.startsWith('data:') || /^https?:\/\//i.test(s)) return s
+  if (s.startsWith('//')) return `${window.location.protocol}${s}`
+  if (s.startsWith('/')) return `${window.location.origin}${s}`
+  return s
+}
+
 /** 画布尺寸 key → Gemini imageConfig.aspectRatio */
 function mapBananaSizeToGeminiAspect(sizeKey) {
   const m = {
@@ -455,6 +465,9 @@ export const useVideoGeneration = () => {
     if (params.resolution) requestData.resolution = params.resolution
     else if (modelConfig?.defaultResolution) requestData.resolution = modelConfig.defaultResolution
     if (params.generateAudio !== undefined) requestData.generateAudio = params.generateAudio
+    if (params.soraI2vPixelSize) {
+      requestData.soraI2vPixelSize = String(params.soraI2vPixelSize).trim()
+    }
 
     if (
       modelStore.currentProvider === 'astraflow' &&
@@ -465,6 +478,17 @@ export const useVideoGeneration = () => {
         requestData.first_frame_image,
         { projectId: params.projectId || currentProjectId.value || 'default' }
       )
+      if (!requestData.soraI2vPixelSize) {
+        const abs = resolveImageSrcForNaturalSize(requestData.first_frame_image)
+        try {
+          const { width, height } = await loadImageNaturalSize(abs)
+          if (width > 0 && height > 0) {
+            requestData.soraI2vPixelSize = `${width}x${height}`
+          }
+        } catch {
+          /* 跨域或无 CORS 时无法读尺寸，回退 providers 内 sora2TaskSize(面板比例) */
+        }
+      }
     }
 
     const videoProvider =

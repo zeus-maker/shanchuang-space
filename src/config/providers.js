@@ -96,13 +96,16 @@ export function buildAstraflowVideoSubmit(params) {
     }
     case 'sora2_i2v': {
       const d = [4, 8, 12].includes(secRaw) ? secRaw : 4
+      const px = String(params.soraI2vPixelSize || '').trim()
+      const size =
+        /^\d{1,5}x\d{1,5}$/.test(px) ? px : sora2TaskSize(params.size)
       return {
         model: apiModel,
         input: {
           first_frame_url: params.first_frame_image || '',
           prompt
         },
-        parameters: { size: sora2TaskSize(params.size), duration: d }
+        parameters: { size, duration: d }
       }
     }
     case 'wan': {

@@ -346,7 +346,8 @@
             <!-- Ratio -->
             <div class="bv-section">
               <span class="bv-section-title">比例</span>
-              <div class="bv-option-row">
+              <p v-if="bvIsSora2I2v" class="bv-hint-text">Sora2 图生视频：每张分镜按对应首帧图像素提交尺寸，无需选择比例。</p>
+              <div v-else class="bv-option-row">
                 <button
                   v-for="r in bvRatioList"
                   :key="r"
@@ -386,7 +387,8 @@
             <!-- Resolution -->
             <div class="bv-section">
               <span class="bv-section-title">生成品质</span>
-              <div class="bv-option-row">
+              <p v-if="bvIsSora2I2v" class="bv-hint-text">该模型由上游按首帧尺寸生成，此处品质选项不参与请求。</p>
+              <div v-else class="bv-option-row">
                 <button
                   v-for="res in bvResolutionList"
                   :key="res"
@@ -417,7 +419,9 @@
             </n-dropdown>
 
             <span class="bv-summary">
-              {{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }} · {{ bvDuration }}s ·
+              <template v-if="bvIsSora2I2v">随首帧尺寸</template>
+              <template v-else>{{ bvRatio }} · {{ bvResolution === '480p' ? '标准' : bvResolution === '720p' ? '高清' : '超清' }}</template>
+              · {{ bvDuration }}s ·
               <n-icon :size="11"><component :is="bvAudio ? VolumeHighOutline : VolumeMuteOutline" /></n-icon>
             </span>
 
@@ -465,6 +469,7 @@ import NodeHandleMenu from './NodeHandleMenu.vue'
 import { useModelStore } from '../../stores/pinia'
 import { streamChatCompletions } from '../../api/chat'
 import { DEFAULT_CHAT_MODEL, VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../../config/models'
+import { getModelConfig } from '../../stores/models'
 import { useVideoGeneration } from '../../hooks'
 import {
   inferTargetSecondsForStoryboard,
@@ -849,13 +854,17 @@ const bvDurList = computed(() => {
   return m?.durs || [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }]
 })
 
+const bvIsSora2I2v = computed(() => getModelConfig(bvModel.value)?.modelverseTaskStyle === 'sora2_i2v')
+
 // Credit cost estimate (rough: base 55 per video, ×2 for 10s, ×1.5 for 1080p, ×1.2 for audio)
 const bvCreditCost = computed(() => {
   const sceneCount = localScenes.value.length
   let perVideo = 55
   if (bvDuration.value >= 10) perVideo *= 2
-  if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
-  else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
+  if (!bvIsSora2I2v.value) {
+    if (bvResolution.value === '1080p') perVideo = Math.ceil(perVideo * 1.5)
+    else if (bvResolution.value === '480p') perVideo = Math.ceil(perVideo * 0.7)
+  }
   if (bvAudio.value) perVideo = Math.ceil(perVideo * 1.2)
   return sceneCount * perVideo
 })
@@ -1131,6 +1140,12 @@ onUnmounted(() => { abortCtrl?.abort() })
   font-size: 13px;
   font-weight: 500;
   color: rgba(255,255,255,0.85);
+}
+.bv-hint-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255,255,255,0.45);
 }
 .bv-hint {
   font-size: 11px;
