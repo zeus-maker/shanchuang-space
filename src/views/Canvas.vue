@@ -58,7 +58,7 @@
         :pan-on-drag="false"
         :selection-key-code="true"
         :zoom-on-double-click="false"
-        :elevate-nodes-on-select="true"
+        :elevate-nodes-on-select="false"
         @connect="onConnect"
         @node-click="onNodeClick"
         @node-drag-start="onNodeDragStart"
@@ -1027,11 +1027,30 @@ const deleteSelectedGroup = () => {
   manualSaveHistory()
 }
 
-const handleGroupDeleteKey = (e) => {
+const isTypingInFocusedField = () => {
+  const tag = document.activeElement?.tagName?.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable
+}
+
+/** 画布快捷键：撤销/重做（与 store undo/redo 一致）；输入框内不触发 */
+const handleCanvasGlobalKeydown = (e) => {
+  const mod = e.metaKey || e.ctrlKey
+  if (mod && e.key === 'z') {
+    if (isTypingInFocusedField()) return
+    e.preventDefault()
+    if (e.shiftKey) redo()
+    else undo()
+    return
+  }
+  if (mod && (e.key === 'y' || e.key === 'Y')) {
+    if (isTypingInFocusedField()) return
+    e.preventDefault()
+    redo()
+    return
+  }
   if (!selectedGroupId.value) return
   if (e.key !== 'Delete' && e.key !== 'Backspace') return
-  const tag = document.activeElement?.tagName?.toLowerCase()
-  if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return
+  if (isTypingInFocusedField()) return
   e.preventDefault()
   deleteSelectedGroup()
 }
@@ -1726,6 +1745,8 @@ const onPaneClick = (event) => {
     selectGroup(hit.id)
   } else {
     selectedGroupId.value = null
+    /* 点到真正空白处时清除节点选中，避免需多次点击才能退出单选工具栏态 */
+    nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
   }
 }
 
@@ -1930,7 +1951,7 @@ watch(
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
-  window.addEventListener('keydown', handleGroupDeleteKey)
+  window.addEventListener('keydown', handleCanvasGlobalKeydown)
 
   if (typeof navigator !== 'undefined') {
     const pf = navigator.platform || ''
@@ -1960,7 +1981,7 @@ onMounted(() => {
 // Cleanup on unmount | 卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
-  window.removeEventListener('keydown', handleGroupDeleteKey)
+  window.removeEventListener('keydown', handleCanvasGlobalKeydown)
   closePaneContextMenu()
   abortGroupChromeDrag()
   // Save project before leaving | 离开前保存项目

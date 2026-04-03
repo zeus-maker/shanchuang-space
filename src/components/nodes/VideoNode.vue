@@ -6,7 +6,8 @@
       class="video-node bg-[var(--bg-secondary)] rounded-xl border relative transition-all duration-200"
       :class="[
         data.selected ? 'border-1 border-blue-500 shadow-lg shadow-blue-500/20' : 'border border-[var(--border-color)]',
-        showVideoEditPanel ? 'w-[460px]' : 'w-[400px]',
+        /* 可展开分镜视频固定宽度，避免展开/折叠时宽度变化被误认为「放大」或引起视口错觉 */
+        canExpandVideoEdit ? 'w-[460px]' : 'w-[400px]',
         canExpandVideoEdit && !showVideoEditPanel ? 'cursor-pointer' : ''
       ]"
       @click.stop="openVideoEdit"
@@ -218,7 +219,7 @@
             :class="activeEditTab === 't2v'
               ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] shadow-sm'
               : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'"
-            @click="activeEditTab = 't2v'"
+            @click.stop="activeEditTab = 't2v'"
           >
             文生视频
           </button>
@@ -229,7 +230,7 @@
               ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] shadow-sm'
               : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'"
             :disabled="!hasFirstFrameUrl"
-            @click="hasFirstFrameUrl && (activeEditTab = 'i2v')"
+            @click.stop="hasFirstFrameUrl && (activeEditTab = 'i2v')"
           >
             图生视频
           </button>
@@ -635,7 +636,7 @@ watch(
   }
 )
 
-/** 补全 videoGenParams / videoMotionPrompt，供下拉与重新生成使用 */
+/** 补全 videoGenParams / videoMotionPrompt，供下拉与重新生成使用（必须保留已有首帧/尾帧等） */
 function ensureVideoGenDefaults () {
   const d = props.data || {}
   const p = d.videoGenParams
@@ -648,13 +649,15 @@ function ensureVideoGenDefaults () {
   }
   const model = d.model || DEFAULT_VIDEO_MODEL
   const cfg = getModelConfig(model)
+  const prev = p && typeof p === 'object' ? p : {}
   updateNode(props.id, {
     videoGenParams: {
+      ...prev,
       model,
-      ratio: cfg?.defaultParams?.ratio || '16:9',
-      dur: cfg?.defaultParams?.duration ?? 5,
-      resolution: cfg?.defaultResolution || '720p',
-      generateAudio: true
+      ratio: prev.ratio || cfg?.defaultParams?.ratio || '16:9',
+      dur: prev.dur != null ? prev.dur : (cfg?.defaultParams?.duration ?? 5),
+      resolution: prev.resolution || cfg?.defaultResolution || '720p',
+      generateAudio: prev.generateAudio !== false
     },
     videoMotionPrompt: d.videoMotionPrompt ?? ''
   })
@@ -662,7 +665,8 @@ function ensureVideoGenDefaults () {
 
 function openVideoEdit () {
   if (!canExpandVideoEdit.value) return
-  ensureVideoGenDefaults()
+  /* 仅在从折叠变为展开时补全默认，避免每次点击节点重复 update 导致与 Tab 切换竞态 */
+  if (!isExpanded.value) ensureVideoGenDefaults()
   isExpanded.value = true
 }
 
