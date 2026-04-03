@@ -40,7 +40,13 @@
         <!-- Model selector | 模型选择 -->
         <div class="flex items-center justify-between">
           <span class="text-xs text-[var(--text-secondary)]">模型</span>
-          <n-dropdown :options="modelOptions" @select="handleModelSelect">
+          <n-dropdown
+            scrollable
+            :menu-props="scrollableModelDropdownMenuProps"
+            trigger="click"
+            :options="modelOptions"
+            @select="handleModelSelect"
+          >
             <button class="flex items-center gap-1 text-sm text-[var(--text-primary)] hover:text-[var(--accent-color)]">
               {{ displayModelName }}
               <n-icon :size="12"><ChevronDownOutline /></n-icon>
@@ -157,6 +163,7 @@ import { getModelRatioOptions, getModelDurationOptions, getModelConfig, DEFAULT_
 import { usesVolcengineVideoApi } from '../../config/models'
 import { getVolcengineApiKey } from '../../config/volcengineEnv'
 import { aggregateBundleTexts, aggregateBundleRefImages } from '../../utils/bundleRefs'
+import { scrollableModelDropdownMenuProps } from '@/utils/scrollableModelDropdown'
 
 // 使用 Pinia store 获取模型选项（根据渠道过滤）
 const modelStore = useModelStore()

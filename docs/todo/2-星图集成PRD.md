@@ -58,7 +58,5 @@ Veo-3.1/文图生视频
   - 图片尺寸默认16:9（已实现：无节点 size 时优先 16:9 横版）
   - 选择模型时选项太多导致无法选择超出选项框的模型（已实现：可滚动下拉）
   - 选择模型后，生图模型调用方式不对，没有参考官方文档调用接口文档（docs/rag/官方文档地址.md）。https://api.modelverse.cn/v1beta/models/gemini-3.1-flash-image-preview:generateContent（已实现：路径 ID 映射、contents.role=user、2.5 与 3.x 分支、参考图 parts）
-
-
-## 记录代码信息
-正在写入 providers.js 中的 astraflow 配置块。
+9. 脚本生成器节点/视频节点等模型时选项太多导致无法选择超出选项框的模型（已实现：Script/VideoConfig/Video/Image/LLM 节点与画布批量视频共用可滚动下拉工具）
+10. 

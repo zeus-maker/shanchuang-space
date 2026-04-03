@@ -312,7 +312,13 @@
         />
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
-          <n-dropdown :options="modelDropdownOptions" @select="onEditModelSelect">
+          <n-dropdown
+            scrollable
+            :menu-props="scrollableModelDropdownMenuProps"
+            trigger="click"
+            :options="modelDropdownOptions"
+            @select="onEditModelSelect"
+          >
             <button
               type="button"
               class="inline-flex items-center gap-1 max-w-[200px] px-2 py-1 rounded-md text-xs font-medium text-[var(--text-primary)] bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary)]/80 border border-[var(--border-color)]"
@@ -471,6 +477,7 @@ import {
   resolveVideoPromptZhFromScene,
   resolveVideoPromptEnFromScene
 } from '@/utils/storyboardVideoPrompt'
+import { scrollableModelDropdownMenuProps } from '@/utils/scrollableModelDropdown'
 
 const props = defineProps({
   id: String,

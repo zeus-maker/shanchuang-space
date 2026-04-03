@@ -61,8 +61,15 @@
         <!-- Model selection | 模型选择 -->
         <div>
           <label class="text-xs text-[var(--text-secondary)] mb-1 block">模型</label>
-          <n-select v-model:value="model" :options="modelOptions" label-field="label" value-field="key" size="small"
-            @update:value="updateConfig" />
+          <n-select
+            v-model:value="model"
+            :options="modelOptions"
+            label-field="label"
+            value-field="key"
+            size="small"
+            :menu-props="scrollableModelSelectMenuProps"
+            @update:value="updateConfig"
+          />
         </div>
 
         <!-- Output format | 输出格式 -->
@@ -151,6 +158,7 @@ import { useChat } from '../../hooks'
 import { useModelStore } from '../../stores/pinia'
 import { parseMentions, removeMention as removeMentionUtil } from '../../hooks/useNodeRef'
 import { aggregateBundleTexts } from '../../utils/bundleRefs'
+import { scrollableModelSelectMenuProps } from '@/utils/scrollableModelDropdown'
 
 /** 文本节点正文：组引用展开 + 自身 content */
 const connectedTextBody = (node) => {

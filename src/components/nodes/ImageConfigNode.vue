@@ -226,7 +226,13 @@
           <!-- Bottom control bar -->
           <div class="icn-bottom-bar">
             <!-- Model selector -->
-            <n-dropdown :options="modelOptions" @select="handleModelSelect">
+            <n-dropdown
+              scrollable
+              :menu-props="scrollableModelDropdownMenuProps"
+              trigger="click"
+              :options="modelOptions"
+              @select="handleModelSelect"
+            >
               <button class="icn-ctrl-pill" @click.stop title="选择模型">
                 <n-icon :size="9"><LibraryOutline /></n-icon>
                 <span>{{ displayModelShort }}</span>
@@ -421,6 +427,7 @@ import { getVolcengineApiKey } from '../../config/volcengineEnv'
 import { parseMentions } from '../../hooks/useNodeRef'
 import { aggregateBundleTexts, aggregateBundleRefImages } from '../../utils/bundleRefs'
 import { registerCanvasGroupNodeExecuteBridge } from '../../hooks/useCanvasGroupNodeExecuteBridge'
+import { scrollableModelDropdownMenuProps } from '@/utils/scrollableModelDropdown'
 
 // ─── Style modal mock data ────────────────────────────────────────────────────
 

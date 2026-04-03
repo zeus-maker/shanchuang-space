@@ -195,7 +195,13 @@
           @keydown.stop
         />
         <div class="flex items-center justify-between px-3 py-2">
-          <n-dropdown :options="modelOptions" @select="onModelSelect">
+          <n-dropdown
+            scrollable
+            :menu-props="scrollableModelDropdownMenuProps"
+            trigger="click"
+            :options="modelOptions"
+            @select="onModelSelect"
+          >
             <button class="flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors max-w-[160px]">
               <n-icon :size="13" class="text-amber-500 shrink-0"><SparklesOutline /></n-icon>
               <span class="truncate">{{ displayModelName }}</span>
@@ -396,7 +402,13 @@
           <div class="bv-bottom-bar">
             <button class="bv-close-btn" @click="handleCloseBatchVideo" title="关闭">✕</button>
 
-            <n-dropdown :options="bvModelOptions" @select="onBvModelSelect" trigger="click">
+            <n-dropdown
+              scrollable
+              :menu-props="scrollableModelDropdownMenuProps"
+              :options="bvModelOptions"
+              @select="onBvModelSelect"
+              trigger="click"
+            >
               <button class="bv-model-btn">
                 <n-icon :size="12"><VideocamOutline /></n-icon>
                 {{ bvDisplayModel }}
@@ -467,6 +479,7 @@ import {
   pickStoryboardImageUrlFromNode,
   resolveI2vFirstFrameFromStoryboardGroup
 } from '@/utils/storyboardVideoPrompt'
+import { scrollableModelDropdownMenuProps } from '@/utils/scrollableModelDropdown'
 
 // ── 常量 ──────────────────────────────────────────────────────────────
 const PROMPT_PLACEHOLDER = '描述剧情或添加角色参考、视频参考等，为你生成分镜脚本'

@@ -182,7 +182,13 @@
                 </div>
                 <div class="bv-bottom-bar">
                   <button type="button" class="bv-close-btn" @click="handleCloseBatchVideo">✕</button>
-                  <n-dropdown :options="bvModelOptions" @select="onBvModelSelect" trigger="click">
+                  <n-dropdown
+                    scrollable
+                    :menu-props="scrollableModelDropdownMenuProps"
+                    :options="bvModelOptions"
+                    @select="onBvModelSelect"
+                    trigger="click"
+                  >
                     <button type="button" class="bv-model-btn">
                       <n-icon :size="12"><VideocamOutline /></n-icon>
                       {{ bvDisplayModel }}
@@ -292,7 +298,7 @@
                   <button type="button" class="bv-close-btn" @click="handleCloseBatchImageExecute">✕</button>
                   <n-dropdown
                     scrollable
-                    :menu-props="biModelDropdownMenuProps"
+                    :menu-props="scrollableModelDropdownMenuProps"
                     :options="biModelOptions"
                     @select="onBiModelSelect"
                     trigger="click"
@@ -633,6 +639,7 @@ import {
   resolveI2vFirstFrameFromStoryboardGroup
 } from '@/utils/storyboardVideoPrompt'
 import { findScriptScenesForGroup } from '@/utils/storyboardGroupScenes'
+import { scrollableModelDropdownMenuProps } from '@/utils/scrollableModelDropdown'
 import { loadAllModels, getModelSizeOptions, getModelQualityOptions, getModelConfig } from '../stores/models'
 import { useChat, useVideoGeneration, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
 import { VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE } from '../config/models'
@@ -1357,11 +1364,6 @@ function pickPreferredStoryboardImageSizeKey (sizeOptions) {
 const toggleBatchImageScene = (id) => {
   batchImageSelectedMap[id] = !batchImageSelectedMap[id]
 }
-
-/** 模型选项过多时可滚动，避免选不到底部项 */
-const biModelDropdownMenuProps = () => ({
-  style: { maxHeight: 'min(360px, 55vh)' }
-})
 
 const syncBatchImageSelectionAllChecked = () => {
   Object.keys(batchImageSelectedMap).forEach((k) => delete batchImageSelectedMap[k])
