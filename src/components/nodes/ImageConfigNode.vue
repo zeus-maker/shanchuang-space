@@ -428,6 +428,7 @@ import { parseMentions } from '../../hooks/useNodeRef'
 import { aggregateBundleTexts, aggregateBundleRefImages } from '../../utils/bundleRefs'
 import { registerCanvasGroupNodeExecuteBridge } from '../../hooks/useCanvasGroupNodeExecuteBridge'
 import { scrollableModelDropdownMenuProps } from '@/utils/scrollableModelDropdown'
+import { loadImageNaturalSize, pickClosestSeedreamSizeKey } from '@/utils/imageDimensions.js'
 
 // ─── Style modal mock data ────────────────────────────────────────────────────
 
@@ -988,7 +989,35 @@ const connectedRefImages = computed(() => getConnectedInputs().refImages)
 // ─── Generate (inline — result stored in this node, no output node created) ───
 
 const handleGenerate = async () => {
-  const { prompt, prompts, refImages, refImagesWithOrder } = getConnectedInputs()
+  const inputs = getConnectedInputs()
+  let { prompt, prompts, refImages, refImagesWithOrder } = inputs
+
+  // 局部重绘：附带蒙版为第二张子图，并对齐 Seedream 输出尺寸
+  if (props.data?.inpaintMode && refImagesWithOrder?.length > 0) {
+    const firstMeta = refImagesWithOrder[0]
+    const srcImgNode = nodes.value.find((n) => n.id === firstMeta?.nodeId)
+    if (srcImgNode?.type === 'image' && srcImgNode.data?.hasInpaintMask && srcImgNode.data?.maskData) {
+      const base = srcImgNode.data.base64 || srcImgNode.data.url
+      const rawMask = srcImgNode.data.maskData
+      const maskUrl = String(rawMask).startsWith('data:')
+        ? rawMask
+        : `data:image/png;base64,${rawMask}`
+      refImages = [base, maskUrl].filter(Boolean)
+    }
+    const src = srcImgNode?.data?.url || srcImgNode?.data?.base64
+    if (src && usesVolcengineImageApi(localModel.value)) {
+      try {
+        const { width, height } = await loadImageNaturalSize(src)
+        const key = pickClosestSeedreamSizeKey(width, height, localQuality.value === '4k')
+        if (key && key !== localSize.value) {
+          localSize.value = key
+          updateNode(props.id, { size: key })
+        }
+      } catch {
+        /* 保持原 size */
+      }
+    }
+  }
 
   if (!prompt && refImages.length === 0) {
     window.$message?.warning('请连接文本节点（提示词）或图片节点（参考图）')

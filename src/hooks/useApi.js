@@ -39,6 +39,7 @@ import { useProvider } from './useProvider'
 import { useModelStore } from '@/stores/pinia'
 import { ensurePublicUrlForSoraFirstFrame } from '@/utils/soraFirstFrameUrl.js'
 import { currentProjectId } from '@/stores/canvas'
+import { loadImageNaturalSize, pickClosestBananaSizeKey } from '@/utils/imageDimensions.js'
 
 /** 画布尺寸 key → Gemini imageConfig.aspectRatio */
 function mapBananaSizeToGeminiAspect(sizeKey) {
@@ -319,9 +320,22 @@ export const useImageGeneration = () => {
           if (isGemini25FlashImageModel(params.model)) {
             generationConfig = { responseModalities: ['TEXT', 'IMAGE'] }
           } else {
-            const aspect = mapBananaSizeToGeminiAspect(
-              params.size || modelConfig?.defaultParams?.size || '1x1'
-            )
+            const refList = Array.isArray(params.image)
+              ? params.image
+              : params.image
+                ? [params.image]
+                : []
+            let bananaKey = params.size || modelConfig?.defaultParams?.size || '1x1'
+            // 有参考图时（含局部重绘底图+蒙版）：按首图实际宽高比对 aspectRatio，避免 Inpaint 报尺寸与请求不一致
+            if (refList.length > 0 && refList[0]) {
+              try {
+                const { width, height } = await loadImageNaturalSize(String(refList[0]).trim())
+                bananaKey = pickClosestBananaSizeKey(width, height)
+              } catch {
+                /* 保持下拉尺寸 */
+              }
+            }
+            const aspect = mapBananaSizeToGeminiAspect(bananaKey)
             const q = params.quality || modelConfig?.defaultParams?.quality
             const imageSize = q === '4k' ? '4K' : '1K'
             generationConfig = {

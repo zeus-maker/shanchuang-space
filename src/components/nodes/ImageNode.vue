@@ -327,6 +327,7 @@ import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NIcon, NTooltip, NSwitch, NImagePreview, NModal, NButton } from 'naive-ui'
 import { TrashOutline, ExpandOutline, ImageOutline, CloseCircleOutline, CopyOutline, VideocamOutline, DownloadOutline, EyeOutline, BrushOutline, RefreshOutline, ColorWandOutline, SwapHorizontalOutline } from '@vicons/ionicons5'
 import { updateNode, removeNode, duplicateNode, addNode, addEdge, nodes } from '../../stores/canvas'
+import { loadImageNaturalSize, pickClosestSeedreamSizeKey } from '@/utils/imageDimensions.js'
 import NodeHandleMenu from './NodeHandleMenu.vue'
 
 const props = defineProps({
@@ -609,14 +610,25 @@ const applyInpaint = () => {
   maskData.value = base64Data
   
   // Create inpaint workflow | 创建重绘工作流
-  createInpaintWorkflow()
+  void createInpaintWorkflow().catch((e) => console.error('[ImageNode] createInpaintWorkflow', e))
 }
 
 // Create inpaint workflow | 创建重绘工作流
-const createInpaintWorkflow = () => {
+const createInpaintWorkflow = async () => {
   const currentNode = nodes.value.find(n => n.id === props.id)
   const nodeX = currentNode?.position?.x || 0
   const nodeY = currentNode?.position?.y || 0
+
+  let inpaintSize = '2048x2048'
+  const src = props.data?.url || props.data?.base64
+  if (src) {
+    try {
+      const { width, height } = await loadImageNaturalSize(src)
+      inpaintSize = pickClosestSeedreamSizeKey(width, height, false)
+    } catch (e) {
+      console.warn('[ImageNode] 局部重绘尺寸回退为默认', e)
+    }
+  }
   
   // Create text node for prompt | 创建文本节点用于提示词
   const textNodeId = addNode('text', { x: nodeX + 300, y: nodeY - 100 }, {
@@ -627,7 +639,7 @@ const createInpaintWorkflow = () => {
   // Create imageConfig node for inpainting | 创建图生图配置节点
   const configNodeId = addNode('imageConfig', { x: nodeX + 600, y: nodeY }, {
     model: 'doubao-seedream-4-5-251128',
-    size: '2048x2048',
+    size: inpaintSize,
     label: '局部重绘',
     inpaintMode: true
   })
