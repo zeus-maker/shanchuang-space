@@ -222,17 +222,24 @@
                       </div>
                     </div>
                     <div class="bi-scene-check-list">
-                      <label
+                      <div
                         v-for="(sn, idx) in selectedGroupImageNodes"
                         :key="sn.id"
                         class="bi-scene-check-row"
+                        role="button"
+                        tabindex="0"
+                        @click="toggleBatchImageScene(sn.id)"
+                        @keydown.enter.prevent="toggleBatchImageScene(sn.id)"
+                        @keydown.space.prevent="toggleBatchImageScene(sn.id)"
                       >
-                        <n-checkbox
-                          :checked="!!batchImageSelectedMap[sn.id]"
-                          @update:checked="(v) => { batchImageSelectedMap[sn.id] = v }"
-                        />
+                        <span class="bi-scene-check-hit" @click.stop>
+                          <n-checkbox
+                            :checked="!!batchImageSelectedMap[sn.id]"
+                            @update:checked="(v) => { batchImageSelectedMap[sn.id] = v }"
+                          />
+                        </span>
                         <span class="bi-scene-label">{{ sn.data?.label || `分镜 #${idx + 1}` }}</span>
-                      </label>
+                      </div>
                     </div>
                   </div>
                   <div v-if="biQualityList.length" class="bv-section">
@@ -283,7 +290,13 @@
                 </div>
                 <div class="bv-bottom-bar">
                   <button type="button" class="bv-close-btn" @click="handleCloseBatchImageExecute">✕</button>
-                  <n-dropdown :options="biModelOptions" @select="onBiModelSelect" trigger="click">
+                  <n-dropdown
+                    scrollable
+                    :menu-props="biModelDropdownMenuProps"
+                    :options="biModelOptions"
+                    @select="onBiModelSelect"
+                    trigger="click"
+                  >
                     <button type="button" class="bv-model-btn">
                       <n-icon :size="12"><ImageOutline /></n-icon>
                       {{ biDisplayModel }}
@@ -1323,6 +1336,33 @@ const biCountOptions = [
   { label: '4 张', key: 4 }
 ]
 
+/** 分镜批量：默认优先 16:9 横版（与 PRD 一致） */
+function pickPreferredStoryboardImageSizeKey (sizeOptions) {
+  if (!sizeOptions?.length) return null
+  const labelHit = sizeOptions.find((o) => /16\s*:\s*9/i.test(String(o.label || '')))
+  if (labelHit) return labelHit.key
+  const keyHit = sizeOptions.find((o) => {
+    const k = String(o.key || '')
+    return (
+      k === '16x9' ||
+      /^2560x1440$/i.test(k) ||
+      /^1920x1080$/i.test(k) ||
+      /^3840x2160$/i.test(k) ||
+      /^5404x3040$/i.test(k)
+    )
+  })
+  return keyHit ? keyHit.key : null
+}
+
+const toggleBatchImageScene = (id) => {
+  batchImageSelectedMap[id] = !batchImageSelectedMap[id]
+}
+
+/** 模型选项过多时可滚动，避免选不到底部项 */
+const biModelDropdownMenuProps = () => ({
+  style: { maxHeight: 'min(360px, 55vh)' }
+})
+
 const syncBatchImageSelectionAllChecked = () => {
   Object.keys(batchImageSelectedMap).forEach((k) => delete batchImageSelectedMap[k])
   selectedGroupImageNodes.value.forEach((n) => {
@@ -1335,11 +1375,20 @@ const initBatchImageParamsFromGroup = () => {
   const d = first?.data
   bgImageModel.value = d?.model || modelStore.selectedImageModel || DEFAULT_IMAGE_MODEL
   bgImageQuality.value = d?.quality || getModelConfig(bgImageModel.value)?.defaultParams?.quality || 'standard'
-  bgImageSize.value = d?.size || getModelConfig(bgImageModel.value)?.defaultParams?.size || DEFAULT_IMAGE_SIZE
   bgImageCount.value = d?.count != null ? d.count : 1
   const sizes = getModelSizeOptions(bgImageModel.value, bgImageQuality.value)
-  if (sizes.length && !sizes.some((o) => o.key === bgImageSize.value)) {
+  const preferred = pickPreferredStoryboardImageSizeKey(sizes)
+  const cfgDefault = getModelConfig(bgImageModel.value)?.defaultParams?.size
+  if (d?.size && sizes.some((o) => o.key === d.size)) {
+    bgImageSize.value = d.size
+  } else if (preferred) {
+    bgImageSize.value = preferred
+  } else if (cfgDefault && sizes.some((o) => o.key === cfgDefault)) {
+    bgImageSize.value = cfgDefault
+  } else if (sizes.length) {
     bgImageSize.value = sizes[Math.min(4, sizes.length - 1)]?.key || sizes[0].key
+  } else {
+    bgImageSize.value = DEFAULT_IMAGE_SIZE
   }
 }
 
@@ -1387,7 +1436,10 @@ const biCreditCost = computed(() => {
 watch(bgImageQuality, () => {
   const sizes = getModelSizeOptions(bgImageModel.value, bgImageQuality.value)
   if (sizes.length && !sizes.some((o) => o.key === bgImageSize.value)) {
-    bgImageSize.value = sizes[Math.min(4, sizes.length - 1)]?.key || sizes[0].key
+    bgImageSize.value =
+      pickPreferredStoryboardImageSizeKey(sizes) ||
+      sizes[Math.min(4, sizes.length - 1)]?.key ||
+      sizes[0].key
   }
 })
 
@@ -1396,11 +1448,19 @@ const onBiModelSelect = (key) => {
   const config = getModelConfig(key)
   if (config?.defaultParams?.quality) bgImageQuality.value = config.defaultParams.quality
   const sizes = getModelSizeOptions(key, bgImageQuality.value)
-  if (config?.defaultParams?.size) {
+  if (config?.defaultParams?.size && sizes.some((o) => o.key === config.defaultParams.size)) {
     bgImageSize.value = config.defaultParams.size
   } else if (sizes.length) {
-    const pick = sizes.find((o) => o.key === '2048x2048') || sizes[Math.min(4, sizes.length - 1)] || sizes[0]
-    bgImageSize.value = pick.key
+    const preferred = pickPreferredStoryboardImageSizeKey(sizes)
+    if (preferred && sizes.some((o) => o.key === preferred)) {
+      bgImageSize.value = preferred
+    } else {
+      const pick =
+        sizes.find((o) => o.key === '2048x2048') ||
+        sizes[Math.min(4, sizes.length - 1)] ||
+        sizes[0]
+      bgImageSize.value = pick.key
+    }
   }
 }
 
@@ -2423,6 +2483,12 @@ onUnmounted(() => {
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 8px;
+  outline: none;
+}
+.bi-scene-check-hit {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
 }
 .bi-scene-check-row:hover {
   background: rgba(255, 255, 255, 0.06);
