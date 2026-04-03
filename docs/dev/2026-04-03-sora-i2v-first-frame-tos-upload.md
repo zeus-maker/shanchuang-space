@@ -15,4 +15,5 @@
 
 - 未配置 TOS 时上传接口返回 **503**，前端会提示配置媒体服务或使用公网首帧链接；生产部署若暴露媒体服务，需结合内网或网关鉴权评估风险。
 - **413 Payload Too Large**：全局 `express.json({ limit: '2mb' })` 先于路由执行时，大体积 data URL 会在进入 `sora-frame-upload` 的 `25mb` 解析器前被拒绝。已将 **`/api/media/sora-frame-upload` 注册在全局 `express.json` 之前**，仅该路径使用 `25mb`。
+- 若 **`/v1/tasks/submit`** 返回 **`slot channel not found in candidates`**：属 **星图服务端调度**（未匹配到可用算力通道），与 **`first_frame_url`、JSON 字段** 通常无关；需稍后重试、在 UCloud 确认账号已开通 **OpenAI Sora2 图生视频** 或联系客服（带 **trace_id**）。画布侧已对应该文案追加 **`explainAstraflowSlotChannelError`** 说明。
 - **涉及模块**：`src/hooks/useApi.js`、`src/utils/soraFirstFrameUrl.js`、`server/index.mjs`、`package.json`。

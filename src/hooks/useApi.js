@@ -411,6 +411,16 @@ export const useImageGeneration = () => {
 }
 
 /**
+ * 星图 /v1/tasks/submit 返回「slot channel not found in candidates」时为服务端调度/线路问题，非客户端 JSON 拼错。
+ * @param {string} message
+ * @returns {string|null} 带说明的完整文案；不匹配则 null
+ */
+function explainAstraflowSlotChannelError (message) {
+  if (!message || !/slot channel not found in candidates/i.test(String(message))) return null
+  return `${message} — 此为星图侧未分配到该模型的生成通道（调度、账号是否开通 Sora2 图生视频、地域或瞬时容量），一般与 first_frame_url / JSON 结构无关。请稍后重试，或在 UCloud 控制台核对模型与配额；可凭返回中的 trace_id 联系客服。`
+}
+
+/**
  * Video generation composable | 视频生成组合式函数
  * Simplified for open source - fixed input/output format
  */
@@ -503,11 +513,29 @@ export const useVideoGeneration = () => {
         ? providerCfg.requestAdapter.video(requestData)
         : adaptRequest('video', requestData)
 
-    const task = await createVideoTask(adaptedParams, {
-      requestType: 'json',
-      endpoint: createEndpoint,
-      headers: { Authorization: `Bearer ${apiKey}` }
-    })
+    let task
+    try {
+      task = await createVideoTask(adaptedParams, {
+        requestType: 'json',
+        endpoint: createEndpoint,
+        headers: { Authorization: `Bearer ${apiKey}` }
+      })
+    } catch (e) {
+      const raw =
+        e?.response?.data?.error?.message ||
+        e?.response?.data?.message ||
+        e?.message ||
+        ''
+      const hint = explainAstraflowSlotChannelError(raw)
+      if (hint) throw new Error(hint)
+      throw e
+    }
+
+    if (task?.error?.message) {
+      const raw = String(task.error.message)
+      const hint = explainAstraflowSlotChannelError(raw)
+      throw new Error(hint || raw)
+    }
 
     const isAsync = modelConfig?.async !== false
 
