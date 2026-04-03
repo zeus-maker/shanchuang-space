@@ -1,12 +1,14 @@
 /**
  * 本地媒体缓存服务：将生成的图片/视频 URL 拉取并保存到可配置目录（默认项目根下 uploads/）
  * 环境变量：MEDIA_ROOT、MEDIA_SERVER_PORT（默认 8787）
+ * Sora2 图生视频首帧：可选 VOLCENGINE_TOS_*，见 README「Sora 图生视频首帧」
  */
 import express from 'express'
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
+import { TosClient, ACLType } from '@volcengine/tos-sdk'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
@@ -47,6 +49,54 @@ function extFromMime (ct, kind) {
 
 const app = express()
 app.use(express.json({ limit: '2mb' }))
+
+function parseImageDataUrl (dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return null
+  const m = dataUrl.match(/^data:image\/([\w+.-]+);base64,(.+)$/i)
+  if (!m) return null
+  const subtype = m[1].toLowerCase()
+  const b64 = m[2].replace(/\s/g, '')
+  let buf
+  try {
+    buf = Buffer.from(b64, 'base64')
+  } catch {
+    return null
+  }
+  if (!buf.length || buf.length > 20 * 1024 * 1024) return null
+  const mime = `image/${subtype}`
+  let ext = subtype === 'jpeg' ? 'jpg' : subtype.split('+')[0]
+  if (!/^[a-z0-9]+$/i.test(ext)) ext = 'png'
+  return { buf, mime, ext }
+}
+
+function getTosRuntime () {
+  const accessKeyId = process.env.VOLCENGINE_TOS_ACCESS_KEY_ID
+  const accessKeySecret = process.env.VOLCENGINE_TOS_SECRET_ACCESS_KEY
+  const bucket = process.env.VOLCENGINE_TOS_BUCKET
+  const region = (process.env.VOLCENGINE_TOS_REGION || 'cn-beijing').trim()
+  const endpoint = (process.env.VOLCENGINE_TOS_ENDPOINT || `tos-${region}.volces.com`).replace(
+    /^https?:\/\//i,
+    ''
+  )
+  if (!accessKeyId || !accessKeySecret || !bucket) return null
+  const client = new TosClient({
+    accessKeyId,
+    accessKeySecret,
+    region,
+    endpoint
+  })
+  return { client, bucket, region }
+}
+
+/** 虚拟托管域名或自定义 CDN 前缀 */
+function buildTosPublicObjectUrl (bucket, region, key) {
+  const custom = process.env.VOLCENGINE_TOS_PUBLIC_BASE_URL
+  const enc = key.split('/').map(encodeURIComponent).join('/')
+  if (custom && String(custom).trim()) {
+    return `${String(custom).replace(/\/$/, '')}/${enc}`
+  }
+  return `https://${bucket}.tos-${region}.volces.com/${enc}`
+}
 
 /** 健康检查 */
 app.get('/api/media/health', (_req, res) => {
@@ -118,6 +168,46 @@ app.post('/api/media/cache', async (req, res) => {
   await fs.writeFile(full, buf)
   const localKey = `${pid}/${filename}`
   res.json({ ok: true, localKey })
+})
+
+/**
+ * POST — 将 data URL 首帧图上传到火山 TOS，返回公网 URL（供 Sora2 图生视频 first_frame_url）
+ * body: { dataUrl: 'data:image/png;base64,...', projectId?: string }
+ * 需配置：VOLCENGINE_TOS_ACCESS_KEY_ID、VOLCENGINE_TOS_SECRET_ACCESS_KEY、VOLCENGINE_TOS_BUCKET；
+ * 可选：VOLCENGINE_TOS_REGION、VOLCENGINE_TOS_ENDPOINT、VOLCENGINE_TOS_PUBLIC_BASE_URL
+ */
+app.post('/api/media/sora-frame-upload', express.json({ limit: '25mb' }), async (req, res) => {
+  const tos = getTosRuntime()
+  if (!tos) {
+    return res.status(503).json({
+      ok: false,
+      error:
+        '未配置火山 TOS：请设置 VOLCENGINE_TOS_ACCESS_KEY_ID、VOLCENGINE_TOS_SECRET_ACCESS_KEY、VOLCENGINE_TOS_BUCKET'
+    })
+  }
+  const parsed = parseImageDataUrl(req.body?.dataUrl)
+  if (!parsed) {
+    return res.status(400).json({
+      ok: false,
+      error: '无效的 dataUrl，需为 data:image/*;base64,...'
+    })
+  }
+  const pid = sanitizeProjectId(req.body?.projectId)
+  const key = `sora-i2v-frames/${pid}/${crypto.randomUUID()}.${parsed.ext}`
+  try {
+    await tos.client.putObject({
+      bucket: tos.bucket,
+      key,
+      body: parsed.buf,
+      contentType: parsed.mime,
+      acl: ACLType.ACLPublicRead
+    })
+    const url = buildTosPublicObjectUrl(tos.bucket, tos.region, key)
+    res.json({ ok: true, url })
+  } catch (e) {
+    console.error('[media-server] sora-frame-upload', e)
+    res.status(502).json({ ok: false, error: String(e?.message || e) })
+  }
 })
 
 if (SERVE_STATIC) {

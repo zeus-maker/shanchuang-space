@@ -37,6 +37,8 @@ import {
 import { useApiConfig } from './useApiConfig'
 import { useProvider } from './useProvider'
 import { useModelStore } from '@/stores/pinia'
+import { ensurePublicUrlForSoraFirstFrame } from '@/utils/soraFirstFrameUrl.js'
+import { currentProjectId } from '@/stores/canvas'
 
 /** 画布尺寸 key → Gemini imageConfig.aspectRatio */
 function mapBananaSizeToGeminiAspect(sizeKey) {
@@ -429,6 +431,17 @@ export const useVideoGeneration = () => {
     if (params.resolution) requestData.resolution = params.resolution
     else if (modelConfig?.defaultResolution) requestData.resolution = modelConfig.defaultResolution
     if (params.generateAudio !== undefined) requestData.generateAudio = params.generateAudio
+
+    if (
+      modelStore.currentProvider === 'astraflow' &&
+      modelConfig?.modelverseTaskStyle === 'sora2_i2v' &&
+      requestData.first_frame_image
+    ) {
+      requestData.first_frame_image = await ensurePublicUrlForSoraFirstFrame(
+        requestData.first_frame_image,
+        { projectId: params.projectId || currentProjectId.value || 'default' }
+      )
+    }
 
     const videoProvider =
       usesVolcengineVideoApi(params.model) && modelStore.currentProvider === 'volcengine'

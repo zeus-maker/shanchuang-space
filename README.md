@@ -103,6 +103,21 @@ pnpm start
 | `PORT` | 监听端口，默认 **8787** |
 | `MEDIA_ROOT` | 媒体目录，默认 **`<项目根>/uploads`** |
 
+#### Sora2 图生视频首帧（火山 TOS）
+
+星图侧 **Sora 图生视频** 的 `first_frame_url` 仅接受公网 **http(s)** 图片地址，不接受 base64。若首帧来自本地上传（data URL），需启动媒体服务并在服务端配置火山引擎 **TOS**，由 `POST /api/media/sora-frame-upload` 上传后返回公网链接。
+
+| 变量 | 含义 |
+|------|------|
+| `VOLCENGINE_TOS_ACCESS_KEY_ID` | TOS 访问密钥 ID（勿提交仓库） |
+| `VOLCENGINE_TOS_SECRET_ACCESS_KEY` | TOS 访问密钥 Secret |
+| `VOLCENGINE_TOS_BUCKET` | 存储桶名称 |
+| `VOLCENGINE_TOS_REGION` | 可选，默认 `cn-beijing` |
+| `VOLCENGINE_TOS_ENDPOINT` | 可选，默认 `tos-${REGION}.volces.com` |
+| `VOLCENGINE_TOS_PUBLIC_BASE_URL` | 可选，自定义公网访问前缀（如 CDN），不填则用 `https://${bucket}.tos-${region}.volces.com` |
+
+桶策略或对象 ACL 需允许 **Modelverse 服务端** 拉取该 URL（通常对象需匿名可读或使用其可访问的域名）。
+
 ### Docker（可选）
 
 ```bash
