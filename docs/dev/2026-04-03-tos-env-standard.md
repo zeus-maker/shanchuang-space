@@ -12,4 +12,6 @@ Sora 首帧上传需读项目根 **`.env`**。曾并行支持 **`TOS_*`** 与 **
 ## 复盘
 
 - 密钥勿入库；媒体服务仍用 **dotenv** 加载根目录 `.env`。
+- 若把接口返回的 **JSON** 误粘进 `.env`，会导致解析异常或变量未加载，出现「未配置火山 TOS」；**Secret 建议用双引号包裹**（尤其末尾为 `=` 的 base64）。
+- 启动时打印 **`VOLCENGINE_TOS (sora-frame-upload): configured | missing`** 便于确认是否读到环境变量。
 - **涉及模块**：`server/index.mjs`、`README.md`、`.env.example`。

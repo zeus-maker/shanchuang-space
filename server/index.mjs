@@ -81,9 +81,9 @@ function sanitizeTosObjectPrefix (raw) {
 }
 
 function getTosRuntime () {
-  const accessKeyId = process.env.VOLCENGINE_TOS_ACCESS_KEY_ID
-  const accessKeySecret = process.env.VOLCENGINE_TOS_SECRET_ACCESS_KEY
-  const bucket = process.env.VOLCENGINE_TOS_BUCKET
+  const accessKeyId = process.env.VOLCENGINE_TOS_ACCESS_KEY_ID?.trim()
+  const accessKeySecret = process.env.VOLCENGINE_TOS_SECRET_ACCESS_KEY?.trim()
+  const bucket = process.env.VOLCENGINE_TOS_BUCKET?.trim()
   const region = (process.env.VOLCENGINE_TOS_REGION || 'cn-beijing').trim()
   const endpointRaw =
     process.env.VOLCENGINE_TOS_ENDPOINT || `tos-${region}.volces.com`
@@ -239,5 +239,8 @@ if (SERVE_STATIC) {
 app.listen(LISTEN_PORT, '0.0.0.0', () => {
   console.log(`[media-server] MEDIA_ROOT=${MEDIA_ROOT}`)
   console.log(`[media-server] SERVE_STATIC=${SERVE_STATIC}`)
+  console.log(
+    `[media-server] VOLCENGINE_TOS (sora-frame-upload): ${getTosRuntime() ? 'configured' : 'missing — check .env 三项密钥与桶名，勿粘贴 JSON 到 .env，改后需重启本进程'}`
+  )
   console.log(`[media-server] listening on :${LISTEN_PORT}`)
 })
