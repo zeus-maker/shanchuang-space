@@ -20,3 +20,11 @@ PRD 指出选择星图 Gemini 图模后调用方式与 [UCloud Modelverse 图模
 - 官方 curl 中 3.x 可选 `tools`（如 `google_search`），当前未附带，避免无关依赖；若业务需要可再按模型开关追加。
 
 **涉及模块**：`src/config/models.js`、`src/hooks/useApi.js`
+
+---
+
+## 再补充（Gemini 请求 URL 与 Base 配置）
+
+- **现象**：Base URL 填成 `https://api.modelverse.cn/v1`（OpenAI 习惯）或 `https://api.modelverse.cn/v1beta` 时，再拼接 `/v1beta/models/...` 会得到 `/v1/v1beta/...`、`/v1beta/v1beta/...` 等错误路径，网关返回 404 或非预期错误。
+- **修改**：`buildModelverseGeminiGenerateContentUrl` 仅使用配置 URL 的 **origin**，再拼官方路径 `/v1beta/models/{id}:generateContent`；新增 `normalizeAstraflowModelverseBaseUrl`，星图渠道保存 API 设置时把 Base 规范为 origin；`ApiSettings` 占位文案提示勿带 `/v1`。
+- **涉及模块**：同上 + `src/components/ApiSettings.vue`

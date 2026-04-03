@@ -15,7 +15,7 @@
           <n-form-item label="Base URL" path="baseUrl">
             <n-input
               v-model:value="formData.baseUrl"
-              placeholder="https://api.chatfire.site/v1"
+              :placeholder="baseUrlPlaceholder"
             />
           </n-form-item>
           <n-form-item label="API Key" path="apiKey">
@@ -198,6 +198,7 @@ import { NModal, NForm, NFormItem, NInput, NButton, NAlert, NDivider, NTag, NTab
 import { useModelStore } from '../stores/pinia'
 import { getProviderConfig, ASTRAFLOW_DEFAULT_MODELS } from '../config/providers'
 import { fetchModelverseTextModels } from '../api/modelverseTextModels'
+import { normalizeAstraflowModelverseBaseUrl } from '../config/models'
 
 /** 星图渠道：当前选中模型若不在该渠道可用列表则回落到 PRD 默认或列表首项 */
 function applyAstraflowModelDefaults(store) {
@@ -245,6 +246,12 @@ const providerOptions = modelStore.providerList.map(p => ({
 }))
 
 // 当前渠道的端点路径
+const baseUrlPlaceholder = computed(() =>
+  formData.provider === 'astraflow'
+    ? 'https://api.modelverse.cn（仅域名根，勿加 /v1 或 /v1beta）'
+    : 'https://api.chatfire.site/v1'
+)
+
 const currentEndpoints = computed(() => {
   const config = getProviderConfig(formData.provider)
   return config.endpoints || {
@@ -346,7 +353,12 @@ const handleSave = async () => {
     modelStore.setApiKeyByProvider(formData.provider, formData.apiKey)
   }
   if (formData.baseUrl) {
-    modelStore.setBaseUrlByProvider(formData.provider, formData.baseUrl)
+    let bu = String(formData.baseUrl).trim()
+    if (formData.provider === 'astraflow') {
+      bu = normalizeAstraflowModelverseBaseUrl(bu)
+      formData.baseUrl = bu
+    }
+    modelStore.setBaseUrlByProvider(formData.provider, bu)
   }
 
   if (formData.provider === 'astraflow' && formData.apiKey && String(formData.baseUrl || '').trim()) {

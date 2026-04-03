@@ -377,3 +377,29 @@ export function resolveModelverseGeminiGenerateContentPathId (modelKey) {
 export function isGemini25FlashImageModel (modelKey) {
   return typeof modelKey === 'string' && modelKey === 'gemini-2.5-flash-image'
 }
+
+/**
+ * 星图 Modelverse：Base URL 规范为 origin（协议+主机+端口）。
+ * 聊天/任务等会自行拼 `/v1/...`；Gemini 生图拼 `/v1beta/models/...`。若 Base 含 `/v1` 或 `/v1beta` 再拼接会路径重复。
+ */
+export function normalizeAstraflowModelverseBaseUrl (baseUrlRaw) {
+  let s = String(baseUrlRaw || '').trim() || 'https://api.modelverse.cn'
+  s = s.replace(/\/+$/, '')
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`
+  try {
+    return new URL(s).origin
+  } catch {
+    return 'https://api.modelverse.cn'
+  }
+}
+
+/**
+ * 组装星图 Gemini generateContent 完整 URL。
+ * 文档：POST https://api.modelverse.cn/v1beta/models/{model}:generateContent
+ */
+export function buildModelverseGeminiGenerateContentUrl (baseUrlRaw, pathModelId) {
+  const base = normalizeAstraflowModelverseBaseUrl(baseUrlRaw)
+  const modelId = String(pathModelId || '').trim()
+  const resource = `/v1beta/models/${encodeURIComponent(modelId)}:generateContent`
+  return `${base}${resource}`
+}

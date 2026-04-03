@@ -17,7 +17,8 @@ import {
   usesVolcengineVideoApi,
   usesModelverseGeminiImage,
   resolveModelverseGeminiGenerateContentPathId,
-  isGemini25FlashImageModel
+  isGemini25FlashImageModel,
+  buildModelverseGeminiGenerateContentUrl
 } from '@/config/models'
 import { getProviderConfig, getDefaultBaseUrl } from '@/config/providers'
 import {
@@ -324,9 +325,7 @@ export const useImageGeneration = () => {
             }
           }
           const body = { contents, generationConfig }
-          const geminiId = encodeURIComponent(pathModelId)
-          const geminiPath = `/v1beta/models/${geminiId}:generateContent`
-          const geminiUrl = `${String(baseUrl).replace(/\/$/, '')}${geminiPath}`
+          const geminiUrl = buildModelverseGeminiGenerateContentUrl(baseUrl, pathModelId)
           const response = await request({
             url: geminiUrl,
             method: 'post',
