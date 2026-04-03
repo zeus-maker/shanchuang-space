@@ -105,7 +105,7 @@ pnpm start
 
 #### Sora2 图生视频首帧（火山 TOS）
 
-星图侧 **Sora 图生视频** 的 `first_frame_url` 仅接受公网 **http(s)** 图片地址，不接受 base64。若首帧来自本地上传（data URL），需启动媒体服务并在服务端配置火山引擎 **TOS**，由 `POST /api/media/sora-frame-upload` 上传后返回公网链接。
+星图侧 **Sora 图生视频** 的 `first_frame_url` 仅接受公网 **http(s)** 图片地址，不接受 base64。若首帧来自本地上传（data URL），需启动媒体服务并在服务端配置火山引擎 **TOS**，由 `POST /api/media/sora-frame-upload` 上传后返回公网链接。`npm run server` 会读取项目根目录 **`.env`** 中的 **`TOS_*`**（与前端 `VITE_*` 可放在同一文件）。
 
 | 变量 | 含义 |
 |------|------|

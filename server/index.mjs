@@ -1,6 +1,6 @@
 /**
  * 本地媒体缓存服务：将生成的图片/视频 URL 拉取并保存到可配置目录（默认项目根下 uploads/）
- * 环境变量：MEDIA_ROOT、MEDIA_SERVER_PORT（默认 8787）
+ * 环境变量：MEDIA_ROOT、MEDIA_SERVER_PORT（默认 8787）；启动时加载项目根 `.env`（不覆盖已有环境变量）
  * Sora2 图生视频首帧：可选 TOS_*（与常见后端一致），或旧名 VOLCENGINE_TOS_*，见 README
  */
 import express from 'express'
@@ -8,10 +8,12 @@ import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
+import dotenv from 'dotenv'
 import { TosClient, ACLType } from '@volcengine/tos-sdk'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
+dotenv.config({ path: path.join(repoRoot, '.env') })
 const MEDIA_ROOT = process.env.MEDIA_ROOT
   ? path.resolve(process.env.MEDIA_ROOT)
   : path.join(repoRoot, 'uploads')

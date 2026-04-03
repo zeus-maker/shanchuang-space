@@ -21,6 +21,7 @@
     "@vue-flow/core": "^1.48.1",
     "@vue-flow/minimap": "^1.5.4",
     "axios": "^1.13.2",
+    "dotenv": "^17.4.0",
     "express": "^4.21.2",
     "jszip": "^3.10.1",
     "naive-ui": "^2.43.2",

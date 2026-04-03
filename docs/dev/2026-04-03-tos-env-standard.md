@@ -13,4 +13,5 @@
 ## 复盘
 
 - 密钥、桶名仅通过环境变量注入，**不得**写入仓库与留档正文。
-- **涉及模块**：`server/index.mjs`、`README.md`、`.env.example`。
+- 媒体服务启动时使用 **`dotenv`** 加载项目根 **`.env`**，便于与 Vite 共用同一文件配置 **`TOS_*`**（`dotenv` 默认不覆盖已在环境中设置的变量）。
+- **涉及模块**：`server/index.mjs`、`README.md`、`.env.example`、`package.json`。
