@@ -3,6 +3,8 @@
  * 适配不同 API 提供商的请求参数和响应格式
  */
 
+import { getModelByName } from './models'
+
 /** 星图（UCloud Modelverse）保存 API 设置时的默认模型，与 PRD 对齐 */
 export const ASTRAFLOW_DEFAULT_MODELS = {
   chat: 'deepseek-ai/DeepSeek-V3.2',
@@ -23,6 +25,317 @@ function toModelverseVideoRatio(sizeOrRatio) {
     '21x9': '21:9'
   }
   return map[sizeOrRatio] || 'adaptive'
+}
+
+/** 画布 ratio / size → 文档用 colon 比例（默认横屏 16:9） */
+function toColonAspect(sizeOrRatio) {
+  const r = toModelverseVideoRatio(sizeOrRatio)
+  return r === 'adaptive' ? '16:9' : r
+}
+
+/** Sora2 任务接口 size：竖屏倾向 720x1280，否则横屏 */
+function sora2TaskSize(sizeOrRatio) {
+  const a = toColonAspect(sizeOrRatio)
+  return a === '9:16' || a === '3:4' ? '720x1280' : '1280x720'
+}
+
+/**
+ * 星图异步视频：按 models.js 中 modelverseTaskStyle / submitModel 组装 /v1/tasks/submit 请求体
+ * @param {Object} params - 与 useVideoGeneration createVideoTaskOnly 中 requestData 一致
+ */
+export function buildAstraflowVideoSubmit(params) {
+  const modelKey = params.model || ''
+  const cfg = getModelByName(modelKey)
+  const apiModel = cfg?.submitModel ?? modelKey
+  const style = cfg?.modelverseTaskStyle
+  const prompt = params.prompt || ''
+  const secRaw = params.seconds != null ? Number(params.seconds) : 5
+  const ratioCol = toColonAspect(params.size)
+  const resLower = String(params.resolution || '720p').toLowerCase()
+
+  // 豆包 Seedance（与文档 content + parameters 一致）
+  if (String(modelKey).includes('doubao-seedance')) {
+    const content = []
+    content.push({ type: 'text', text: prompt })
+    if (params.first_frame_image) {
+      const entry = {
+        type: 'image_url',
+        image_url: { url: params.first_frame_image }
+      }
+      if (params.last_frame_image) entry.role = 'first_frame'
+      content.push(entry)
+    }
+    if (params.last_frame_image) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: params.last_frame_image },
+        role: 'last_frame'
+      })
+    }
+    const parameters = {
+      generate_audio: params.generateAudio !== undefined ? !!params.generateAudio : true,
+      draft: false,
+      resolution: params.resolution || '720p',
+      ratio: toModelverseVideoRatio(params.size),
+      duration: params.seconds != null ? Number(params.seconds) : 5,
+      watermark: params.wm !== undefined ? !!params.wm : false,
+      camera_fixed: params.cf !== undefined ? !!params.cf : false
+    }
+    if (params.seed !== undefined) parameters.seed = params.seed
+    return { model: apiModel, input: { content }, parameters }
+  }
+
+  switch (style) {
+    case 'sora2_t2v': {
+      const d = [4, 8, 12].includes(secRaw) ? secRaw : 4
+      return {
+        model: apiModel,
+        input: { prompt },
+        parameters: { size: sora2TaskSize(params.size), duration: d }
+      }
+    }
+    case 'sora2_i2v': {
+      const d = [4, 8, 12].includes(secRaw) ? secRaw : 4
+      return {
+        model: apiModel,
+        input: {
+          first_frame_url: params.first_frame_image || '',
+          prompt
+        },
+        parameters: { size: sora2TaskSize(params.size), duration: d }
+      }
+    }
+    case 'wan': {
+      const isI2v = cfg?.type === 'i2v'
+      const input = { prompt, negative_prompt: '' }
+      if (isI2v) {
+        input.first_frame_url = params.first_frame_image || ''
+        if (params.last_frame_image) input.last_frame_url = params.last_frame_image
+      }
+      const resP = resLower.includes('480') ? '480P' : '720P'
+      const dur = [5, 8].includes(secRaw) ? secRaw : 5
+      const body = { model: apiModel, input, parameters: { resolution: resP, duration: dur } }
+      if (params.seed !== undefined) body.parameters.seed = params.seed
+      return body
+    }
+    case 'minimax_t2v':
+      return {
+        model: apiModel,
+        input: { prompt },
+        parameters: {
+          duration: secRaw === 10 ? 10 : 6,
+          resolution: '1080P',
+          prompt_optimizer: true,
+          fast_pretreatment: false,
+          aigc_watermark: false
+        }
+      }
+    case 'minimax_i2v':
+    case 'minimax_fast':
+      return {
+        model: apiModel,
+        input: {
+          first_frame_image: params.first_frame_image || '',
+          prompt
+        },
+        parameters: {
+          duration: secRaw === 10 ? 10 : 6,
+          resolution: '1080P',
+          prompt_optimizer: true,
+          fast_pretreatment: false,
+          aigc_watermark: false
+        }
+      }
+    case 'minimax02': {
+      const input = { prompt }
+      if (params.first_frame_image) input.first_frame_image = params.first_frame_image
+      if (params.last_frame_image) input.last_frame_image = params.last_frame_image
+      return {
+        model: apiModel,
+        input,
+        parameters: {
+          duration: secRaw === 10 ? 10 : 6,
+          resolution: '1080P',
+          prompt_optimizer: true,
+          aigc_watermark: false
+        }
+      }
+    }
+    case 'kling_o1': {
+      const duration = Math.min(10, Math.max(3, secRaw))
+      const parameters = { mode: 'pro', aspect_ratio: ratioCol, duration }
+      const imageList = []
+      if (params.first_frame_image) {
+        imageList.push({ image_url: params.first_frame_image, type: 'first_frame' })
+      }
+      if (params.last_frame_image) {
+        imageList.push({ image_url: params.last_frame_image, type: 'end_frame' })
+      }
+      if (imageList.length) parameters.image_list = imageList
+      return { model: apiModel, input: { prompt }, parameters }
+    }
+    case 'kling_v26_t2v':
+      return {
+        model: apiModel,
+        input: { prompt, negative_prompt: '' },
+        parameters: {
+          mode: 'pro',
+          aspect_ratio: ratioCol,
+          duration: [5, 10].includes(secRaw) ? secRaw : 5
+        }
+      }
+    case 'kling_v26_i2v':
+      return {
+        model: apiModel,
+        input: { prompt, negative_prompt: '' },
+        parameters: {
+          mode: 'pro',
+          aspect_ratio: ratioCol,
+          duration: [5, 10].includes(secRaw) ? secRaw : 5,
+          image: params.first_frame_image || '',
+          ...(params.last_frame_image ? { image_tail: params.last_frame_image } : {})
+        }
+      }
+    case 'kling_v3': {
+      const duration = Math.min(15, Math.max(3, secRaw))
+      const parameters = {
+        mode: 'pro',
+        aspect_ratio: ratioCol,
+        duration,
+        sound: 'off'
+      }
+      if (params.first_frame_image) {
+        parameters.image = params.first_frame_image
+        if (params.last_frame_image) parameters.image_tail = params.last_frame_image
+      }
+      return {
+        model: apiModel,
+        input: { prompt, negative_prompt: '' },
+        parameters
+      }
+    }
+    case 'veo31': {
+      const duration = [4, 6, 8].includes(secRaw) ? secRaw : 8
+      return {
+        model: apiModel,
+        input: { prompt, negative_prompt: '' },
+        parameters: {
+          resolution: resLower.includes('1080') ? '1080p' : '720p',
+          duration,
+          aspect_ratio: ratioCol,
+          generate_audio: params.generateAudio !== false,
+          person_generation: 'allow_adult'
+        }
+      }
+    }
+    case 'vidu':
+      return {
+        model: apiModel,
+        input: { prompt },
+        parameters: {
+          vidu_type: cfg?.modelverseViduType || 'text2video',
+          duration: secRaw,
+          aspect_ratio: ratioCol,
+          resolution: resLower.includes('1080') ? '1080p' : '720p',
+          bgm: false
+        }
+      }
+    case 'vidu_img2':
+      return {
+        model: apiModel,
+        input: {
+          first_frame_url: params.first_frame_image || '',
+          prompt,
+          ...(params.last_frame_image ? { last_frame_url: params.last_frame_image } : {})
+        },
+        parameters: {
+          vidu_type: 'img2video',
+          duration: secRaw,
+          resolution: resLower.includes('1080') ? '1080p' : '720p',
+          movement_amplitude: 'auto',
+          audio: false
+        }
+      }
+    case 'vidu_ref':
+      return {
+        model: apiModel,
+        input: {
+          images: params.first_frame_image ? [params.first_frame_image] : [],
+          prompt
+        },
+        parameters: {
+          vidu_type: 'reference2video',
+          duration: secRaw,
+          aspect_ratio: ratioCol,
+          resolution: resLower.includes('1080') ? '1080p' : '720p',
+          bgm: false,
+          audio: false
+        }
+      }
+    case 'vidu_startend':
+      return {
+        model: apiModel,
+        input: {
+          first_frame_url: params.first_frame_image || '',
+          last_frame_url: params.last_frame_image || '',
+          prompt
+        },
+        parameters: {
+          vidu_type: 'start-end2video',
+          duration: secRaw,
+          resolution: resLower.includes('1080') ? '1080p' : '720p',
+          movement_amplitude: 'auto',
+          bgm: false
+        }
+      }
+    case 'vidu_extend':
+      return {
+        model: apiModel,
+        input: {
+          video_url: params.first_frame_image || '',
+          prompt,
+          ...(params.last_frame_image ? { last_frame_url: params.last_frame_image } : {})
+        },
+        parameters: {
+          vidu_type: 'extend',
+          duration: Math.min(7, Math.max(1, secRaw)),
+          resolution: resLower.includes('1080') ? '1080p' : '720p'
+        }
+      }
+    case 'vidu_lip':
+      return {
+        model: 'vidu-lip-sync',
+        input: {
+          video_url: params.first_frame_image || '',
+          text: prompt
+        },
+        parameters: { vidu_type: 'lip-sync' }
+      }
+    case 'vidu_mv':
+      return {
+        model: 'vidu-mv',
+        input: {
+          images: params.first_frame_image ? [params.first_frame_image] : [],
+          prompt,
+          audio_url: params.last_frame_image || ''
+        },
+        parameters: {
+          vidu_type: 'one-click/mv',
+          aspect_ratio: ratioCol,
+          resolution: resLower.includes('540') ? '540p' : resLower.includes('1080') ? '1080p' : '720p'
+        }
+      }
+    default:
+      return {
+        model: apiModel,
+        input: { content: [{ type: 'text', text: prompt }] },
+        parameters: {
+          resolution: params.resolution || '720p',
+          ratio: toModelverseVideoRatio(params.size),
+          duration: params.seconds != null ? Number(params.seconds) : 5
+        }
+      }
+  }
 }
 
 // 渠道适配配置
@@ -378,50 +691,7 @@ export const PROVIDERS = {
         if (params.image) adapted.image = params.image
         return adapted
       },
-      video: (params) => {
-        const model = params.model || ''
-        if (!model.includes('seedance')) {
-          return {
-            model,
-            input: {
-              content: [{ type: 'text', text: params.prompt || '' }]
-            },
-            parameters: {
-              resolution: params.resolution || '720p',
-              ratio: toModelverseVideoRatio(params.size),
-              duration: params.seconds != null ? Number(params.seconds) : 5
-            }
-          }
-        }
-        const content = []
-        content.push({ type: 'text', text: params.prompt || '' })
-        if (params.first_frame_image) {
-          const entry = {
-            type: 'image_url',
-            image_url: { url: params.first_frame_image }
-          }
-          if (params.last_frame_image) entry.role = 'first_frame'
-          content.push(entry)
-        }
-        if (params.last_frame_image) {
-          content.push({
-            type: 'image_url',
-            image_url: { url: params.last_frame_image },
-            role: 'last_frame'
-          })
-        }
-        const parameters = {
-          generate_audio: params.generateAudio !== undefined ? !!params.generateAudio : true,
-          draft: false,
-          resolution: params.resolution || '720p',
-          ratio: toModelverseVideoRatio(params.size),
-          duration: params.seconds != null ? Number(params.seconds) : 5,
-          watermark: params.wm !== undefined ? !!params.wm : false,
-          camera_fixed: params.cf !== undefined ? !!params.cf : false
-        }
-        if (params.seed !== undefined) parameters.seed = params.seed
-        return { model, input: { content }, parameters }
-      }
+      video: (params) => buildAstraflowVideoSubmit(params)
     },
     responseAdapter: {
       chat: (response) => {

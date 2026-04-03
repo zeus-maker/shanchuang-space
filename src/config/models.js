@@ -45,6 +45,36 @@ export const BANANA_SIZE_OPTIONS = [
     { label: '9:16', key: '9x16' },
 ]
 
+/** OpenAI 兼容生图常用尺寸（星图 /v1/images/generations） */
+const ASTRAFLOW_OPENAI_IMAGE_SIZES = ['1024x1024', '1792x1024', '1024x1792', '2048x2048']
+
+/**
+ * 星图图片模型清单（PRD 写死，model 与 UCloud Modelverse 文档一致）
+ * Gemini 系列走 generateContent，其余默认走 OpenAI 兼容 images/generations
+ */
+const ASTRAFLOW_IMAGE_MODELS = [
+    { label: 'Nano Banana (Gemini 2.5 Flash Image)', key: 'gemini-2.5-flash-image', provider: ['astraflow'], sizes: BANANA_SIZE_OPTIONS.map(s => s.key), defaultParams: { size: '1x1', quality: 'standard', style: 'vivid' } },
+    { label: 'Nano Banana Pro (Gemini 3 Pro Image)', key: 'gemini-3-pro-image', provider: ['astraflow'], sizes: BANANA_SIZE_OPTIONS.map(s => s.key), defaultParams: { size: '1x1', quality: 'standard', style: 'vivid' } },
+    { label: 'Nano Banana 2 (Gemini 3.1 Flash Image)', key: 'gemini-3.1-flash-image-preview', provider: ['astraflow'], sizes: BANANA_SIZE_OPTIONS.map(s => s.key), defaultParams: { size: '1x1', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux 2 Pro', key: 'flux-2-pro', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Pro', key: 'flux-kontext-pro', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Pro 1.1', key: 'flux-pro-1.1', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux.1 Dev', key: 'black-forest-labs/flux.1-dev', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Pro', key: 'black-forest-labs/flux-kontext-pro', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Pro Multi', key: 'black-forest-labs/flux-kontext-pro/multi', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Pro 文生图', key: 'black-forest-labs/flux-kontext-pro/text-to-image', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Step1X Edit', key: 'stepfun-ai/step1x-edit', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Max', key: 'black-forest-labs/flux-kontext-max', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Max Multi', key: 'black-forest-labs/flux-kontext-max/multi', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Flux Kontext Max 文生图', key: 'black-forest-labs/flux-kontext-max/text-to-image', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Qwen Image Edit', key: 'Qwen/Qwen-Image-Edit', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'Qwen Image', key: 'Qwen/Qwen-Image', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'GPT Image 1', key: 'gpt-image-1', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: 'GPT Image 1.5', key: 'gpt-image-1.5', provider: ['astraflow'], sizes: ASTRAFLOW_OPENAI_IMAGE_SIZES, defaultParams: { size: '1024x1024', quality: 'standard', style: 'vivid' } },
+    { label: '豆包 Seedream 4.5', key: 'doubao-seedream-4.5', provider: ['astraflow'], sizes: [...SEEDREAM_SIZE_OPTIONS.map(s => s.key), '2K', '4K'], defaultParams: { size: '2048x2048', quality: 'standard', style: 'vivid' } },
+    { label: '豆包 Seedream 5.0', key: 'doubao-seedream-5-0-260128', provider: ['astraflow'], sizes: [...SEEDREAM_SIZE_OPTIONS.map(s => s.key), '2K', '4K'], defaultParams: { size: '2048x2048', quality: 'standard', style: 'vivid' } }
+]
+
 // Image generation models | 图片生成模型
 export const IMAGE_MODELS = [
     {
@@ -97,17 +127,7 @@ export const IMAGE_MODELS = [
             style: 'vivid'
         }
     },
-    {
-        label: 'Gemini 3.1 Flash Image',
-        key: 'gemini-3.1-flash-image-preview',
-        provider: ['astraflow'],
-        sizes: BANANA_SIZE_OPTIONS.map(s => s.key),
-        defaultParams: {
-            size: '1x1',
-            quality: 'standard',
-            style: 'vivid'
-        }
-    },
+    ...ASTRAFLOW_IMAGE_MODELS
 
 ]
 
@@ -125,6 +145,46 @@ export const SEEDANCE_RESOLUTION_OPTIONS = [
     { label: '480p', key: '480p' },
     { label: '720p', key: '720p' },
     { label: '1080p', key: '1080p' }
+]
+
+/** 星图视频：与 VideoConfig 节点一致的 ratio 字符串 */
+const AF_V_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
+const AF_V_D510 = [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }]
+const AF_V_D4812 = [{ label: '4 秒', key: 4 }, { label: '8 秒', key: 8 }, { label: '12 秒', key: 12 }]
+const AF_V_D468 = [{ label: '4 秒', key: 4 }, { label: '6 秒', key: 6 }, { label: '8 秒', key: 8 }]
+const AF_V_RES = ['480p', '720p', '1080p']
+
+/**
+ * 星图视频模型（PRD + Modelverse 文档 model 字段；部分 key 为 UI 专用，submitModel 为实际请求 model）
+ * modelverseTaskStyle 由 config/providers buildAstraflowVideoSubmit 消费
+ */
+const ASTRAFLOW_VIDEO_MODELS = [
+    { label: 'OpenAI Sora2 文生视频', key: 'openai/sora-2/text-to-video', provider: ['astraflow'], type: 't2v', ratios: AF_V_RATIOS, durs: AF_V_D4812, resolutions: AF_V_RES, defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 4, resolution: '720p' }, modelverseTaskStyle: 'sora2_t2v', submitModel: 'openai/sora-2/text-to-video' },
+    { label: 'OpenAI Sora2 图生视频', key: 'openai/sora-2/image-to-video', provider: ['astraflow'], type: 'i2v', ratios: AF_V_RATIOS, durs: AF_V_D4812, resolutions: AF_V_RES, defaultResolution: '720p', defaultParams: { ratio: '9:16', duration: 4, resolution: '720p' }, modelverseTaskStyle: 'sora2_i2v', submitModel: 'openai/sora-2/image-to-video' },
+    { label: 'OpenAI Sora-2 官方视频', key: 'sora-2', provider: ['astraflow'], type: 't2v+i2v', ratios: AF_V_RATIOS, durs: AF_V_D4812, resolutions: AF_V_RES, defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 8, resolution: '720p' }, modelverseTaskStyle: 'openai_videos', tips: '走 multipart /v1/videos，与任务 submit 不同；画布暂未串联该链路，请优先用 Sora2 文生/图生任务接口' },
+    { label: 'Wan 2.2 文生视频', key: 'Wan-AI/Wan2.2-T2V', provider: ['astraflow'], type: 't2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '8 秒', key: 8 }], resolutions: ['480p', '720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'wan' },
+    { label: 'Wan 2.2 图生视频', key: 'Wan-AI/Wan2.2-I2V', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '8 秒', key: 8 }], resolutions: ['480p', '720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'wan' },
+    { label: 'Wan 2.5 文生视频', key: 'Wan-AI/Wan2.5-T2V', provider: ['astraflow'], type: 't2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '8 秒', key: 8 }], resolutions: ['480p', '720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'wan' },
+    { label: 'Wan 2.5 图生视频', key: 'Wan-AI/Wan2.5-I2V', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '8 秒', key: 8 }], resolutions: ['480p', '720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'wan' },
+    { label: 'Wan 2.6 文生视频', key: 'Wan-AI/Wan2.6-T2V', provider: ['astraflow'], type: 't2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '8 秒', key: 8 }], resolutions: ['480p', '720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'wan' },
+    { label: 'Wan 2.6 图生视频', key: 'Wan-AI/Wan2.6-I2V', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '8 秒', key: 8 }], resolutions: ['480p', '720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'wan' },
+    { label: 'MiniMax Hailuo 2.3 文生视频', key: 'MiniMax-Hailuo-2.3-t2v', provider: ['astraflow'], type: 't2v', ratios: AF_V_RATIOS, durs: [{ label: '6 秒', key: 6 }, { label: '10 秒', key: 10 }], resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 6, resolution: '1080p' }, modelverseTaskStyle: 'minimax_t2v', submitModel: 'MiniMax-Hailuo-2.3' },
+    { label: 'MiniMax Hailuo 2.3 图生视频', key: 'MiniMax-Hailuo-2.3-i2v', provider: ['astraflow'], type: 'i2v', ratios: ['16:9'], durs: [{ label: '6 秒', key: 6 }, { label: '10 秒', key: 10 }], resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 6, resolution: '1080p' }, modelverseTaskStyle: 'minimax_i2v', submitModel: 'MiniMax-Hailuo-2.3' },
+    { label: 'MiniMax Hailuo 2.3 Fast', key: 'MiniMax-Hailuo-2.3-Fast', provider: ['astraflow'], type: 'i2v', ratios: ['16:9'], durs: [{ label: '6 秒', key: 6 }, { label: '10 秒', key: 10 }], resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 6, resolution: '1080p' }, modelverseTaskStyle: 'minimax_fast', submitModel: 'MiniMax-Hailuo-2.3-Fast' },
+    { label: 'MiniMax Hailuo 02', key: 'MiniMax-Hailuo-02', provider: ['astraflow'], type: 't2v+i2v', ratios: AF_V_RATIOS, durs: [{ label: '6 秒', key: 6 }, { label: '10 秒', key: 10 }], resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 6, resolution: '1080p' }, modelverseTaskStyle: 'minimax02', submitModel: 'MiniMax-Hailuo-02' },
+    { label: 'Vidu 文生视频', key: 'vidu-viduq2-text2video', provider: ['astraflow'], type: 't2v', ratios: AF_V_RATIOS, durs: AF_V_D510, resolutions: AF_V_RES, defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'vidu', submitModel: 'viduq2', modelverseViduType: 'text2video' },
+    { label: 'Vidu 图生视频', key: 'vidu-viduq3-img2video', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16'], durs: AF_V_D510, resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }, modelverseTaskStyle: 'vidu_img2', submitModel: 'viduq3-pro' },
+    { label: 'Vidu 参考图生视频', key: 'vidu-viduq2-reference2video', provider: ['astraflow'], type: 'i2v', ratios: AF_V_RATIOS, durs: AF_V_D510, resolutions: AF_V_RES, defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'vidu_ref', submitModel: 'viduq2' },
+    { label: 'Vidu 首尾帧生视频', key: 'vidu-viduq2pro-startend', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16'], durs: AF_V_D510, resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }, modelverseTaskStyle: 'vidu_startend', submitModel: 'viduq2-pro' },
+    { label: 'Vidu 视频延长', key: 'vidu-viduq2turbo-extend', provider: ['astraflow'], type: 'i2v', ratios: ['16:9'], durs: [{ label: '5 秒', key: 5 }, { label: '7 秒', key: 7 }], resolutions: AF_V_RES, defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 5, resolution: '720p' }, modelverseTaskStyle: 'vidu_extend', submitModel: 'viduq2-turbo', tips: '首帧连接处请传待延长视频的 URL（video_url）；尾帧可选' },
+    { label: 'Vidu 对口型', key: 'vidu-lip-sync', provider: ['astraflow'], type: 'i2v', ratios: ['16:9'], durs: [{ label: '10 秒', key: 10 }], resolutions: ['720p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 10, resolution: '720p' }, modelverseTaskStyle: 'vidu_lip', submitModel: 'vidu-lip-sync' },
+    { label: 'Vidu 一键生成 MV', key: 'vidu-mv', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16', '1:1', '4:3', '3:4'], durs: [{ label: '30 秒', key: 30 }], resolutions: ['540p', '720p', '1080p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 30, resolution: '720p' }, modelverseTaskStyle: 'vidu_mv', submitModel: 'vidu-mv', tips: '首帧传参考图，尾帧连接可传音频 URL 作为 audio_url' },
+    { label: '可灵 Kling O1', key: 'kling-video-o1', provider: ['astraflow'], type: 't2v+i2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }], resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }, modelverseTaskStyle: 'kling_o1', submitModel: 'kling-video-o1' },
+    { label: '可灵 v2.6 文生视频', key: 'kling-v2-6-t2v', provider: ['astraflow'], type: 't2v', ratios: ['16:9', '9:16', '1:1'], durs: AF_V_D510, resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }, modelverseTaskStyle: 'kling_v26_t2v', submitModel: 'kling-v2-6' },
+    { label: '可灵 v2.6 图生视频', key: 'kling-v2-6-i2v', provider: ['astraflow'], type: 'i2v', ratios: ['16:9', '9:16', '1:1'], durs: AF_V_D510, resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }, modelverseTaskStyle: 'kling_v26_i2v', submitModel: 'kling-v2-6' },
+    { label: '可灵 v3 多模态视频', key: 'kling-v3', provider: ['astraflow'], type: 't2v+i2v', ratios: ['16:9', '9:16', '1:1'], durs: [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }, { label: '15 秒', key: 15 }], resolutions: AF_V_RES, defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }, modelverseTaskStyle: 'kling_v3', submitModel: 'kling-v3' },
+    { label: 'Veo 3.1 文图生视频', key: 'veo-3.1-generate-001', provider: ['astraflow'], type: 't2v+i2v', ratios: ['16:9', '9:16'], durs: AF_V_D468, resolutions: ['720p', '1080p'], defaultResolution: '1080p', defaultParams: { ratio: '16:9', duration: 8, resolution: '1080p' }, modelverseTaskStyle: 'veo31', submitModel: 'veo-3.1-generate-001' },
+    { label: 'Veo 3.1 Fast', key: 'veo-3.1-fast-generate-001', provider: ['astraflow'], type: 't2v+i2v', ratios: ['16:9', '9:16'], durs: AF_V_D468, resolutions: ['720p', '1080p'], defaultResolution: '720p', defaultParams: { ratio: '16:9', duration: 8, resolution: '720p' }, modelverseTaskStyle: 'veo31', submitModel: 'veo-3.1-fast-generate-001' }
 ]
 
 // Video generation models | 视频生成模型
@@ -190,6 +250,7 @@ export const VIDEO_MODELS = [
         defaultResolution: '1080p',
         defaultParams: { ratio: '16:9', duration: 5, resolution: '1080p' }
     },
+    ...ASTRAFLOW_VIDEO_MODELS,
     // 可灵 Kling
     // {
     //     label: '可灵 Kling v2.5-turbo',
@@ -297,4 +358,4 @@ export const usesVolcengineVideoApi = (modelKey) =>
 
 /** 星图 Gemini 生图：走 Modelverse generateContent + x-goog-api-key，非 OpenAI images 接口 */
 export const usesModelverseGeminiImage = (modelKey) =>
-    typeof modelKey === 'string' && modelKey.includes('gemini-3.1-flash-image-preview')
+    typeof modelKey === 'string' && /^gemini-.+image/i.test(modelKey)

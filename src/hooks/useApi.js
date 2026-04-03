@@ -284,8 +284,8 @@ export const useImageGeneration = () => {
               imageConfig: { aspectRatio: aspect, imageSize }
             }
           }
-          const geminiPath =
-            '/v1beta/models/gemini-3.1-flash-image-preview:generateContent'
+          const geminiId = encodeURIComponent(params.model)
+          const geminiPath = `/v1beta/models/${geminiId}:generateContent`
           const geminiUrl = `${String(baseUrl).replace(/\/$/, '')}${geminiPath}`
           const response = await request({
             url: geminiUrl,
@@ -398,6 +398,12 @@ export const useVideoGeneration = () => {
         videoProvider === 'volcengine'
           ? 'Seedance 1.5 Pro 需火山引擎 Key：请在根目录 .env 设置 VITE_VOLCENGINE_API_KEY，或在 API 设置中填写「火山引擎」密钥'
           : '请先配置 API Key'
+      )
+    }
+
+    if (videoProvider === 'astraflow' && modelConfig?.modelverseTaskStyle === 'openai_videos') {
+      throw new Error(
+        'Sora-2 官方接口为 multipart /v1/videos，与 /v1/tasks/submit 不同。请改用「OpenAI Sora2 文生视频」或「图生视频」任务模型。'
       )
     }
 
