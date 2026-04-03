@@ -591,7 +591,21 @@ const router = useRouter()
 const route = useRoute()
 
 // Vue Flow instance | Vue Flow 实例
-const { viewport, zoomIn, zoomOut, fitView, updateNodeInternals, screenToFlowCoordinate } = useVueFlow()
+const {
+  viewport,
+  zoomIn,
+  zoomOut,
+  fitView,
+  updateNodeInternals,
+  screenToFlowCoordinate,
+  removeSelectedElements,
+  setPaneClickDistance
+} = useVueFlow()
+
+/** 与 Vue Flow 内部 nodeLookup 选中态同步；仅改 nodes 数组易导致「点空白无效、拖一下才好」 */
+function clearVueFlowSelection () {
+  removeSelectedElements()
+}
 
 /** Apple 平台启用触控板双指滑动平移（pan-on-scroll）；Windows 等仍用滚轮缩放（zoom-on-scroll）| Trackpad pan on Mac */
 const canvasWheelPan = ref(false)
@@ -864,7 +878,7 @@ const nodeLabelForId = (id) => {
 
 const selectGroup = (id) => {
   selectedGroupId.value = id
-  nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
+  clearVueFlowSelection()
 }
 
 /** 顶栏或底框空白拖拽移动打组（流坐标增量，松手后 manualSaveHistory）| Drag via strip or frame */
@@ -1490,7 +1504,7 @@ const createCanvasGroupFromSelection = () => {
   if (sel.length < 2) return
   const gid = addCanvasGroup(sel.map(n => n.id))
   if (!gid) return
-  nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
+  clearVueFlowSelection()
   selectedGroupId.value = gid
   window.$message?.success('已打组：框大小已固定；拖标题条可连带移动框与组内节点')
 }
@@ -1745,8 +1759,7 @@ const onPaneClick = (event) => {
     selectGroup(hit.id)
   } else {
     selectedGroupId.value = null
-    /* 点到真正空白处时清除节点选中，避免需多次点击才能退出单选工具栏态 */
-    nodes.value = nodes.value.map(n => ({ ...n, selected: false }))
+    clearVueFlowSelection()
   }
 }
 
@@ -1959,6 +1972,9 @@ onMounted(() => {
     const phoneLike = /\biPhone\b|\biPod\b/i.test(ua)
     canvasWheelPan.value = !phoneLike && (/^Mac/i.test(pf) || /Mac OS X/.test(ua))
   }
+
+  /* 默认 0 时轻微手抖会导致 pane-click 不触发，空白处难以取消选中 */
+  setPaneClickDistance(8)
   
   // Initialize projects store | 初始化项目存储
   initProjectsStore()
