@@ -1064,12 +1064,30 @@ const handleDelete = () => {
 // ─── Watchers ─────────────────────────────────────────────────────────────────
 
 watch(() => props.data?.model, (newModel) => {
-  if (newModel && newModel !== localModel.value) {
-    localModel.value = newModel
-    const config = getModelConfig(newModel)
-    if (config?.defaultParams?.quality) localQuality.value = config.defaultParams.quality
-    if (config?.defaultParams?.size) localSize.value = config.defaultParams.size
+  if (!newModel || newModel === localModel.value) return
+  localModel.value = newModel
+  const config = getModelConfig(newModel)
+  // 画布「整组执行」等会一次性写入 model+size+quality，优先沿用节点 data，避免被 defaultParams 覆盖
+  const incomingQ = props.data?.quality
+  const incomingS = props.data?.size
+  if (incomingQ != null && incomingQ !== '') {
+    localQuality.value = incomingQ
+  } else if (config?.defaultParams?.quality) {
+    localQuality.value = config.defaultParams.quality
   }
+  if (incomingS != null && incomingS !== '') {
+    localSize.value = incomingS
+  } else if (config?.defaultParams?.size) {
+    localSize.value = config.defaultParams.size
+  }
+})
+
+watch(() => props.data?.size, (s) => {
+  if (s != null && s !== '' && s !== localSize.value) localSize.value = s
+})
+
+watch(() => props.data?.quality, (q) => {
+  if (q != null && q !== '' && q !== localQuality.value) localQuality.value = q
 })
 
 watch(() => props.data?.prompt, (val) => {

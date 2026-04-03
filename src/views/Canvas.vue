@@ -201,6 +201,115 @@
                 </div>
               </div>
             </Transition>
+
+            <!-- 整组执行（分镜图）：与批量视频同锚定面板，可勾选节点并统一生图参数 -->
+            <Transition name="bv-panel">
+              <div
+                v-if="selectedGroupId === g.id && showBatchImageExecutePanel && selectedGroupHasImageConfigs"
+                data-group-chrome="1"
+                class="absolute bv-panel bv-panel--anchored bv-panel--image-batch"
+                :style="groupBatchImagePanelStyle(g)"
+                @pointerdown.stop
+                @click.stop
+              >
+                <div class="bv-settings">
+                  <div class="bv-section">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                      <span class="bv-section-title">分镜图</span>
+                      <div class="flex items-center gap-2">
+                        <button type="button" class="bi-link-btn" @click="biSelectAllScenes">全选</button>
+                        <button type="button" class="bi-link-btn" @click="biSelectNoScenes">全不选</button>
+                      </div>
+                    </div>
+                    <div class="bi-scene-check-list">
+                      <label
+                        v-for="(sn, idx) in selectedGroupImageNodes"
+                        :key="sn.id"
+                        class="bi-scene-check-row"
+                      >
+                        <n-checkbox
+                          :checked="!!batchImageSelectedMap[sn.id]"
+                          @update:checked="(v) => { batchImageSelectedMap[sn.id] = v }"
+                        />
+                        <span class="bi-scene-label">{{ sn.data?.label || `分镜 #${idx + 1}` }}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div v-if="biQualityList.length" class="bv-section">
+                    <span class="bv-section-title">画质</span>
+                    <div class="bv-option-row flex-wrap">
+                      <button
+                        v-for="q in biQualityList"
+                        :key="q.key"
+                        type="button"
+                        class="bv-option-btn"
+                        :class="{ active: bgImageQuality === q.key }"
+                        @click="bgImageQuality = q.key"
+                      >
+                        {{ q.label }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="bv-section">
+                    <span class="bv-section-title">尺寸</span>
+                    <div class="bv-option-row flex-wrap">
+                      <button
+                        v-for="s in biSizeList"
+                        :key="s.key"
+                        type="button"
+                        class="bv-option-btn"
+                        :class="{ active: bgImageSize === s.key }"
+                        @click="bgImageSize = s.key"
+                      >
+                        {{ s.label }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="bv-section">
+                    <span class="bv-section-title">单次张数</span>
+                    <div class="bv-option-row">
+                      <button
+                        v-for="c in biCountOptions"
+                        :key="c.key"
+                        type="button"
+                        class="bv-option-btn"
+                        :class="{ active: bgImageCount === c.key }"
+                        @click="bgImageCount = c.key"
+                      >
+                        {{ c.label }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="bv-bottom-bar">
+                  <button type="button" class="bv-close-btn" @click="handleCloseBatchImageExecute">✕</button>
+                  <n-dropdown :options="biModelOptions" @select="onBiModelSelect" trigger="click">
+                    <button type="button" class="bv-model-btn">
+                      <n-icon :size="12"><ImageOutline /></n-icon>
+                      {{ biDisplayModel }}
+                      <n-icon :size="10"><ChevronDownOutline /></n-icon>
+                    </button>
+                  </n-dropdown>
+                  <span class="bv-summary">
+                    {{ biSizeShortLabel }} · {{ biQualityShortLabel }} · {{ bgImageCount }} 张
+                  </span>
+                  <span class="bv-scene-count">已选 {{ biSelectedCount }} / {{ selectedGroupImageNodes.length }} 个分镜</span>
+                  <button
+                    type="button"
+                    class="bv-generate-btn"
+                    :disabled="isGroupExecuting || biSelectedCount === 0"
+                    @click="confirmBatchImageGroupExecute"
+                  >
+                    <n-spin v-if="isGroupExecuting" :size="14" />
+                    <template v-else>⚡ {{ biCreditCost }} 执行生图</template>
+                  </button>
+                </div>
+                <div v-if="isGroupExecuting" class="bi-progress-wrap">
+                  <n-progress type="line" :percentage="groupExecuteProgress" :show-indicator="false" color="#f59e0b" rail-color="rgba(245,158,11,0.15)" />
+                  <p class="bi-progress-hint">并行执行中… {{ groupExecuteProgress }}%</p>
+                </div>
+              </div>
+            </Transition>
           </template>
         </template>
         <Background v-if="showGrid" :gap="20" :size="1" />
@@ -472,12 +581,12 @@
  * Canvas view component | 画布视图组件
  * Main infinite canvas with Vue Flow integration
  */
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, markRaw } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, watch, nextTick, markRaw } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
-import { NIcon, NSwitch, NDropdown, NMessageProvider, NSpin, NModal, NInput, NButton, NProgress } from 'naive-ui'
+import { NIcon, NSwitch, NDropdown, NMessageProvider, NSpin, NModal, NInput, NButton, NProgress, NCheckbox } from 'naive-ui'
 import { 
   ChevronBackOutline,
   ChevronDownOutline,
@@ -511,9 +620,9 @@ import {
   resolveI2vFirstFrameFromStoryboardGroup
 } from '@/utils/storyboardVideoPrompt'
 import { findScriptScenesForGroup } from '@/utils/storyboardGroupScenes'
-import { loadAllModels } from '../stores/models'
+import { loadAllModels, getModelSizeOptions, getModelQualityOptions, getModelConfig } from '../stores/models'
 import { useChat, useVideoGeneration, useWorkflowOrchestrator, CANVAS_GROUP_NODE_EXECUTE_EVENT } from '../hooks'
-import { VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL } from '../config/models'
+import { VIDEO_MODELS, SEEDANCE_RESOLUTION_OPTIONS, DEFAULT_VIDEO_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE } from '../config/models'
 import { useModelStore } from '../stores/pinia'
 import { projects, initProjectsStore, updateProject, renameProject, currentProject, updateProjectCanvas } from '../stores/projects'
 
@@ -842,6 +951,19 @@ const groupBatchVideoPanelStyle = (g) => {
   }
 }
 
+/** 整组执行（分镜图）面板：略加宽以容纳勾选列表 | Batch image group execute */
+const groupBatchImagePanelStyle = (g) => {
+  const b = groupFrameRect(g)
+  const w = Math.min(920, Math.max(b.width, 320))
+  return {
+    left: `${b.x}px`,
+    top: `${b.y + b.height + GAP_BATCH_PANEL_BELOW}px`,
+    width: `${w}px`,
+    zIndex: 271,
+    pointerEvents: 'auto'
+  }
+}
+
 function topoSortMembers (memberIds, edgesList) {
   const set = new Set(memberIds)
   const sub = edgesList.filter(e => set.has(e.source) && set.has(e.target))
@@ -985,6 +1107,12 @@ const confirmGroupExecute = async () => {
     window.$message?.warning('当前顺序中没有可自动执行的配置节点（文生图 / 视频 / LLM）')
     return
   }
+  await runGroupExecuteForNodeIds(executable, { closeModalOnSuccess: true })
+}
+
+/** 并行整组执行指定节点 id 列表（进度条与 isGroupExecuting 共用） */
+const runGroupExecuteForNodeIds = async (executable, { closeModalOnSuccess = false, closeBatchImagePanelOnSuccess = false } = {}) => {
+  if (!executable.length) return
   isGroupExecuting.value = true
   groupExecuteProgress.value = 0
   let completed = 0
@@ -993,7 +1121,7 @@ const confirmGroupExecute = async () => {
     executable.map(nodeId =>
       requestGroupNodeExecute(nodeId).then(() => {
         completed++
-        groupExecuteProgress.value = Math.round(completed / executable.length * 100)
+        groupExecuteProgress.value = Math.round((completed / executable.length) * 100)
       })
     )
   )
@@ -1002,7 +1130,8 @@ const confirmGroupExecute = async () => {
   const failedCount = results.filter(r => r.status === 'rejected').length
   if (!failedCount) {
     window.$message?.success('整组执行已完成')
-    showGroupExecuteModal.value = false
+    if (closeModalOnSuccess) showGroupExecuteModal.value = false
+    if (closeBatchImagePanelOnSuccess) showBatchImageExecutePanel.value = false
   } else {
     window.$message?.warning(`${executable.length - failedCount}/${executable.length} 个节点执行完成，${failedCount} 个失败`)
   }
@@ -1013,13 +1142,6 @@ const onGroupLayoutSelect = (key) => {
   if (!selectedGroupId.value) return
   const k = typeof key === 'object' && key != null && 'key' in key ? key.key : key
   layoutGroupMembers(selectedGroupId.value, k === 'horizontal' ? 'horizontal' : 'grid')
-}
-
-const openGroupExecuteModal = () => {
-  const g = canvasGroups.value.find(x => x.id === selectedGroupId.value)
-  if (!g) return
-  groupExecuteOrder.value = topoSortMembers(g.memberIds, edges.value)
-  showGroupExecuteModal.value = true
 }
 
 const ungroupSelected = () => {
@@ -1128,11 +1250,13 @@ const downloadSelectedGroup = async () => {
 const { createVideoTaskOnly } = useVideoGeneration()
 
 const showBatchVideoPanel = ref(false)
+const showBatchImageExecutePanel = ref(false)
 const isGeneratingVideos = ref(false)
 const isStitchingVideos = ref(false)
 
 watch(selectedGroupId, () => {
   showBatchVideoPanel.value = false
+  showBatchImageExecutePanel.value = false
 })
 const bvModel = ref(DEFAULT_VIDEO_MODEL)
 const bvRatio = ref('16:9')
@@ -1186,6 +1310,155 @@ const bvDurList = computed(() => {
 })
 const bvSceneCount = computed(() => selectedGroupImageNodes.value.length)
 
+/** 分镜图整组执行：勾选 + 统一生图参数（面板形态对齐批量视频） */
+const batchImageSelectedMap = reactive({})
+const bgImageModel = ref(DEFAULT_IMAGE_MODEL)
+const bgImageSize = ref(DEFAULT_IMAGE_SIZE)
+const bgImageQuality = ref('standard')
+const bgImageCount = ref(1)
+
+const biCountOptions = [
+  { label: '1 张', key: 1 },
+  { label: '2 张', key: 2 },
+  { label: '4 张', key: 4 }
+]
+
+const syncBatchImageSelectionAllChecked = () => {
+  Object.keys(batchImageSelectedMap).forEach((k) => delete batchImageSelectedMap[k])
+  selectedGroupImageNodes.value.forEach((n) => {
+    batchImageSelectedMap[n.id] = true
+  })
+}
+
+const initBatchImageParamsFromGroup = () => {
+  const first = selectedGroupImageNodes.value[0]
+  const d = first?.data
+  bgImageModel.value = d?.model || modelStore.selectedImageModel || DEFAULT_IMAGE_MODEL
+  bgImageQuality.value = d?.quality || getModelConfig(bgImageModel.value)?.defaultParams?.quality || 'standard'
+  bgImageSize.value = d?.size || getModelConfig(bgImageModel.value)?.defaultParams?.size || DEFAULT_IMAGE_SIZE
+  bgImageCount.value = d?.count != null ? d.count : 1
+  const sizes = getModelSizeOptions(bgImageModel.value, bgImageQuality.value)
+  if (sizes.length && !sizes.some((o) => o.key === bgImageSize.value)) {
+    bgImageSize.value = sizes[Math.min(4, sizes.length - 1)]?.key || sizes[0].key
+  }
+}
+
+const openGroupExecuteModal = () => {
+  const g = canvasGroups.value.find((x) => x.id === selectedGroupId.value)
+  if (!g) return
+  groupExecuteOrder.value = topoSortMembers(g.memberIds, edges.value)
+  const hasImg = g.memberIds.some((mid) => nodes.value.find((x) => x.id === mid)?.type === 'imageConfig')
+  if (hasImg) {
+    showBatchVideoPanel.value = false
+    showBatchImageExecutePanel.value = true
+    syncBatchImageSelectionAllChecked()
+    initBatchImageParamsFromGroup()
+    return
+  }
+  showGroupExecuteModal.value = true
+}
+
+const biModelOptions = computed(() =>
+  (modelStore.allImageModelOptions || []).map((m) => ({ label: m.label, key: m.key }))
+)
+const biDisplayModel = computed(() => {
+  const m = modelStore.allImageModelOptions?.find((x) => x.key === bgImageModel.value)
+  return m?.label?.replace(/\(.*\)/, '').trim() || bgImageModel.value
+})
+const biQualityList = computed(() => getModelQualityOptions(bgImageModel.value))
+const biSizeList = computed(() => getModelSizeOptions(bgImageModel.value, bgImageQuality.value))
+const biSelectedCount = computed(() =>
+  selectedGroupImageNodes.value.filter((n) => batchImageSelectedMap[n.id]).length
+)
+const biSizeShortLabel = computed(() => {
+  const o = biSizeList.value.find((x) => x.key === bgImageSize.value)
+  return o?.label || bgImageSize.value
+})
+const biQualityShortLabel = computed(() => {
+  const o = biQualityList.value.find((x) => x.key === bgImageQuality.value)
+  if (o?.label) return o.label
+  return bgImageQuality.value === '4k' ? '4K' : '标准'
+})
+const biCreditCost = computed(() => {
+  const base = bgImageQuality.value === '4k' ? 24 : 12
+  return base * biSelectedCount.value * (bgImageCount.value || 1)
+})
+
+watch(bgImageQuality, () => {
+  const sizes = getModelSizeOptions(bgImageModel.value, bgImageQuality.value)
+  if (sizes.length && !sizes.some((o) => o.key === bgImageSize.value)) {
+    bgImageSize.value = sizes[Math.min(4, sizes.length - 1)]?.key || sizes[0].key
+  }
+})
+
+const onBiModelSelect = (key) => {
+  bgImageModel.value = key
+  const config = getModelConfig(key)
+  if (config?.defaultParams?.quality) bgImageQuality.value = config.defaultParams.quality
+  const sizes = getModelSizeOptions(key, bgImageQuality.value)
+  if (config?.defaultParams?.size) {
+    bgImageSize.value = config.defaultParams.size
+  } else if (sizes.length) {
+    const pick = sizes.find((o) => o.key === '2048x2048') || sizes[Math.min(4, sizes.length - 1)] || sizes[0]
+    bgImageSize.value = pick.key
+  }
+}
+
+const biSelectAllScenes = () => {
+  selectedGroupImageNodes.value.forEach((n) => {
+    batchImageSelectedMap[n.id] = true
+  })
+}
+
+const biSelectNoScenes = () => {
+  selectedGroupImageNodes.value.forEach((n) => {
+    batchImageSelectedMap[n.id] = false
+  })
+}
+
+const handleCloseBatchImageExecute = () => {
+  showBatchImageExecutePanel.value = false
+}
+
+const confirmBatchImageGroupExecute = async () => {
+  if (!isApiConfigured.value) {
+    window.$message?.warning('请先配置 API Key')
+    return
+  }
+  const selectedSet = new Set(
+    selectedGroupImageNodes.value.filter((n) => batchImageSelectedMap[n.id]).map((n) => n.id)
+  )
+  if (selectedSet.size === 0) {
+    window.$message?.warning('请至少勾选一张分镜图')
+    return
+  }
+
+  const order = groupExecuteOrder.value
+  const executable = order.filter((id) => {
+    const n = nodes.value.find((x) => x.id === id)
+    if (!n || !GROUP_EXECUTABLE_TYPES.includes(n.type)) return false
+    if (n.type === 'imageConfig') return selectedSet.has(id)
+    return true
+  })
+
+  if (executable.length === 0) {
+    window.$message?.warning('当前没有可执行的节点')
+    return
+  }
+
+  selectedSet.forEach((id) => {
+    updateNode(id, {
+      model: bgImageModel.value,
+      size: bgImageSize.value,
+      quality: bgImageQuality.value,
+      count: bgImageCount.value
+    })
+  })
+  await nextTick()
+
+  await runGroupExecuteForNodeIds(executable, { closeBatchImagePanelOnSuccess: true })
+}
+
 /** 组内视频节点按分镜网格顺序（与批量生成布局一致） */
 const sortVideoNodesForStitch = (list) =>
   [...list].sort((a, b) => {
@@ -1224,7 +1497,10 @@ watch(bvModel, (key) => {
 })
 
 const onBvModelSelect = (key) => { bvModel.value = key }
-const handleOpenBatchVideo = () => { showBatchVideoPanel.value = true }
+const handleOpenBatchVideo = () => {
+  showBatchImageExecutePanel.value = false
+  showBatchVideoPanel.value = true
+}
 const handleCloseBatchVideo = () => { showBatchVideoPanel.value = false }
 
 const handleAutoStitchVideos = async () => {
@@ -2113,4 +2389,59 @@ onUnmounted(() => {
 .bv-panel-leave-active { transition: all 0.2s ease-in; }
 .bv-panel-enter-from { opacity: 0; transform: translateY(40px); }
 .bv-panel-leave-to { opacity: 0; transform: translateY(40px); }
+
+.bv-panel--image-batch {
+  max-height: min(560px, 78vh);
+}
+.bi-link-btn {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.bi-link-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+}
+.bi-scene-check-list {
+  max-height: min(140px, 28vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px 0;
+}
+.bi-scene-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.bi-scene-check-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.bi-scene-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bi-progress-wrap {
+  padding: 0 16px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(20, 20, 25, 0.45);
+}
+.bi-progress-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
 </style>
