@@ -116,7 +116,7 @@ export const useModelStore = defineStore('model', () => {
   // 清除渠道配置
   const clearProvider = () => {
     currentProvider.value = getDefaultProvider()
-    removeStored(STORAGE_KEYS.PROVIDER)
+    setStored(STORAGE_KEYS.PROVIDER, '')
   }
 
   // 适配请求参数
@@ -155,9 +155,7 @@ export const useModelStore = defineStore('model', () => {
   const selectedVideoModel = ref(getStored(STORAGE_KEYS.SELECTED_VIDEO_MODEL, DEFAULT_VIDEO_MODEL))
 
   // 按渠道存储的 API 配置
-  const apiKeysByProvider = ref(getStoredJson(STORAGE_KEYS.API_KEYS_BY_PROVIDER, {
-    deepseek: 'sk-80f46a596ac94365886e776e20861ffc'
-  }))
+  const apiKeysByProvider = ref(getStoredJson(STORAGE_KEYS.API_KEYS_BY_PROVIDER, {}))
   const baseUrlsByProvider = ref(getStoredJson(STORAGE_KEYS.BASE_URLS_BY_PROVIDER, {}))
 
   // 当前渠道的 API Key 和 Base URL
@@ -493,6 +491,14 @@ export const useModelStore = defineStore('model', () => {
     return false
   }
 
+  /** 覆盖某渠道的拉取式文本模型列表（如星图 /v1/models） */
+  const replaceCustomChatModelsByProvider = (provider, models) => {
+    customChatModelsByProvider.value = {
+      ...customChatModelsByProvider.value,
+      [provider]: Array.isArray(models) ? models : []
+    }
+  }
+
   // 清除所有自定义模型
   const clearCustomModels = () => {
     customChatModels.value = []
@@ -585,6 +591,7 @@ export const useModelStore = defineStore('model', () => {
     removeCustomChatModelByProvider,
     removeCustomImageModelByProvider,
     removeCustomVideoModelByProvider,
+    replaceCustomChatModelsByProvider,
 
     // Get model
     getChatModel,

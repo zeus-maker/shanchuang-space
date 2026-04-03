@@ -169,9 +169,12 @@ const props = defineProps({
 // Vue Flow instance | Vue Flow 实例
 const { updateNodeInternals } = useVueFlow()
 
-// API config state | API 配置状态（Seedance 1.5 Pro 走火山引擎，与 .env 或 API 设置中的火山 Key）
+// API config state | Seedance 1.5 仅在「当前渠道为火山」时要求火山 Key；星图等同渠道用当前 Key
 const isConfigured = computed(() => {
-  if (usesVolcengineVideoApi(localModel.value)) {
+  if (
+    usesVolcengineVideoApi(localModel.value) &&
+    modelStore.currentProvider === 'volcengine'
+  ) {
     return !!(getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine)
   }
   return !!modelStore.currentApiKey

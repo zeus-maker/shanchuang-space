@@ -10,7 +10,13 @@ import {
   getVideoTaskStatus,
   streamChatCompletions
 } from '@/api'
-import { getModelByName, usesVolcengineImageApi, usesVolcengineVideoApi } from '@/config/models'
+import { request } from '@/utils'
+import {
+  getModelByName,
+  usesVolcengineImageApi,
+  usesVolcengineVideoApi,
+  usesModelverseGeminiImage
+} from '@/config/models'
 import { getProviderConfig, getDefaultBaseUrl } from '@/config/providers'
 import {
   getVolcengineApiKey,
@@ -26,6 +32,38 @@ import {
 import { useApiConfig } from './useApiConfig'
 import { useProvider } from './useProvider'
 import { useModelStore } from '@/stores/pinia'
+
+/** 画布尺寸 key → Gemini imageConfig.aspectRatio */
+function mapBananaSizeToGeminiAspect(sizeKey) {
+  const m = {
+    '16x9': '16:9',
+    '4x3': '4:3',
+    '3x2': '3:2',
+    '1x1': '1:1',
+    '2x3': '2:3',
+    '3x4': '3:4',
+    '9x16': '9:16'
+  }
+  return m[sizeKey] || '1:1'
+}
+
+/** 解析 Modelverse Gemini generateContent 响应为与 OpenAI 生图一致的 { url } 列表 */
+function extractGeminiImageParts(response) {
+  const cands = response?.candidates || []
+  const out = []
+  for (const c of cands) {
+    const parts = c?.content?.parts || []
+    for (const p of parts) {
+      if (p?.thought) continue
+      const data = p?.inlineData?.data
+      const mime = p?.inlineData?.mimeType || 'image/png'
+      if (data) {
+        out.push({ url: `data:${mime};base64,${data}`, revisedPrompt: '' })
+      }
+    }
+  }
+  return out
+}
 
 /** 火山推理 Base：环境变量已 normalize；UI 里填写的 Base 也做纠错 */
 function resolveVolcengineInferenceBase(modelStore) {
@@ -191,7 +229,10 @@ export const useImageGeneration = () => {
       const modelConfig = getModelByName(params.model)
 
       // ── Resolve provider, endpoint, API key ─────────────────────────────────
-      const imageProvider = usesVolcengineImageApi(params.model) ? 'volcengine' : modelStore.currentProvider
+      const imageProvider =
+        usesVolcengineImageApi(params.model) && modelStore.currentProvider === 'volcengine'
+          ? 'volcengine'
+          : modelStore.currentProvider
       const providerCfg = getProviderConfig(imageProvider)
       const baseUrl =
         imageProvider === 'volcengine'
@@ -228,6 +269,42 @@ export const useImageGeneration = () => {
         if (params.image) requestData.image = params.image
         // Always n=1 per call; multiple images are handled by parallel calls below
         requestData.n = 1
+
+        // 星图 Gemini：Modelverse v1beta generateContent + x-goog-api-key
+        if (usesModelverseGeminiImage(params.model) && imageProvider === 'astraflow') {
+          const aspect = mapBananaSizeToGeminiAspect(
+            params.size || modelConfig?.defaultParams?.size || '1x1'
+          )
+          const q = params.quality || modelConfig?.defaultParams?.quality
+          const imageSize = q === '4k' ? '4K' : '1K'
+          const body = {
+            contents: [{ parts: [{ text: params.prompt || '' }] }],
+            generationConfig: {
+              responseModalities: ['TEXT', 'IMAGE'],
+              imageConfig: { aspectRatio: aspect, imageSize }
+            }
+          }
+          const geminiPath =
+            '/v1beta/models/gemini-3.1-flash-image-preview:generateContent'
+          const geminiUrl = `${String(baseUrl).replace(/\/$/, '')}${geminiPath}`
+          const response = await request({
+            url: geminiUrl,
+            method: 'post',
+            data: body,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKeyForImage
+            }
+          })
+          if (response?.error?.message) {
+            throw new Error(response.error.message)
+          }
+          const list = extractGeminiImageParts(response)
+          if (!list.length) {
+            throw new Error('生图响应中未找到图片数据')
+          }
+          return list
+        }
 
         const adaptReq = providerCfg.requestAdapter?.image
         const adaptedParams = adaptReq ? adaptReq(requestData) : requestData
@@ -296,7 +373,10 @@ export const useVideoGeneration = () => {
     else if (modelConfig?.defaultResolution) requestData.resolution = modelConfig.defaultResolution
     if (params.generateAudio !== undefined) requestData.generateAudio = params.generateAudio
 
-    const videoProvider = usesVolcengineVideoApi(params.model) ? 'volcengine' : modelStore.currentProvider
+    const videoProvider =
+      usesVolcengineVideoApi(params.model) && modelStore.currentProvider === 'volcengine'
+        ? 'volcengine'
+        : modelStore.currentProvider
     const providerCfg = getProviderConfig(videoProvider)
     const chatfireCfg = getProviderConfig('chatfire')
 
@@ -324,7 +404,8 @@ export const useVideoGeneration = () => {
     const modelStr = String(params.model || '')
     const useChatfireSeedanceBody =
       modelStr.includes('seedance') &&
-      (usesVolcengineVideoApi(params.model) || videoProvider === 'chatfire')
+      ((videoProvider === 'volcengine' && usesVolcengineVideoApi(params.model)) ||
+        videoProvider === 'chatfire')
 
     const adaptedParams = useChatfireSeedanceBody
       ? chatfireCfg.requestAdapter.video(requestData)
@@ -351,7 +432,7 @@ export const useVideoGeneration = () => {
       return { taskId: null, url }
     }
 
-    const newTaskId = task.id || task.task_id || task.taskId
+    const newTaskId = task.id || task.task_id || task.taskId || task.output?.task_id
     if (!newTaskId) {
       throw new Error('未获取到任务 ID')
     }
@@ -401,6 +482,19 @@ export const useVideoGeneration = () => {
           headers: pollHeaders
         })
 
+        // UCloud Modelverse 视频异步：output.task_status / output.urls
+        const mvOut = result?.output
+        if (mvOut && typeof mvOut.task_status === 'string') {
+          if (mvOut.task_status === 'Success' && Array.isArray(mvOut.urls) && mvOut.urls[0]) {
+            return { url: mvOut.urls[0], ...result }
+          }
+          if (mvOut.task_status === 'Failure' || mvOut.task_status === 'Expired') {
+            throw new Error(mvOut.error_message || '视频生成失败')
+          }
+          await new Promise(resolve => setTimeout(resolve, interval))
+          continue
+        }
+
         const adaptedResult = ctx
           ? volcCfg.responseAdapter?.video?.(result) || adaptResponse('video', result)
           : adaptResponse('video', result)
@@ -445,7 +539,10 @@ export const useVideoGeneration = () => {
    */
   const fetchVideoResultUrlOnce = async (pollTaskId, modelName) => {
     if (!pollTaskId || !modelName) return null
-    const videoProvider = usesVolcengineVideoApi(modelName) ? 'volcengine' : modelStore.currentProvider
+    const videoProvider =
+      usesVolcengineVideoApi(modelName) && modelStore.currentProvider === 'volcengine'
+        ? 'volcengine'
+        : modelStore.currentProvider
     const providerCfg = getProviderConfig(videoProvider)
     const apiKey =
       videoProvider === 'volcengine'
@@ -484,6 +581,10 @@ export const useVideoGeneration = () => {
         endpoint: taskEndpoint,
         headers: pollHeaders
       })
+      const mvOut = result?.output
+      if (mvOut && mvOut.task_status === 'Success' && Array.isArray(mvOut.urls) && mvOut.urls[0]) {
+        return mvOut.urls[0]
+      }
       const ctx = getVideoPollContext(pollTaskId)
       const adaptedResult = ctx
         ? volcCfg.responseAdapter?.video?.(result) || adaptResponse('video', result)

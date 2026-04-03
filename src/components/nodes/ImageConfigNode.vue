@@ -470,7 +470,10 @@ const { updateNodeInternals } = useVueFlow()
 // ─── API configuration ────────────────────────────────────────────────────────
 
 const isConfigured = computed(() => {
-  if (usesVolcengineImageApi(localModel.value)) {
+  if (
+    usesVolcengineImageApi(localModel.value) &&
+    modelStore.currentProvider === 'volcengine'
+  ) {
     return !!(getVolcengineApiKey() || modelStore.apiKeysByProvider?.volcengine)
   }
   return !!modelStore.currentApiKey

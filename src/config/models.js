@@ -97,6 +97,17 @@ export const IMAGE_MODELS = [
             style: 'vivid'
         }
     },
+    {
+        label: 'Gemini 3.1 Flash Image',
+        key: 'gemini-3.1-flash-image-preview',
+        provider: ['astraflow'],
+        sizes: BANANA_SIZE_OPTIONS.map(s => s.key),
+        defaultParams: {
+            size: '1x1',
+            quality: 'standard',
+            style: 'vivid'
+        }
+    },
 
 ]
 
@@ -122,7 +133,7 @@ export const VIDEO_MODELS = [
     {
         label: 'Seedance 1.5 Pro (图文视频)',
         key: 'doubao-seedance-1-5-pro-251215',
-        provider: ['chatfire'],
+        provider: ['chatfire', 'astraflow'],
         type: 't2v+i2v',
         ratios: ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9'],
         durs: [{ label: '5 秒', key: 5 }, { label: '10 秒', key: 10 }],
@@ -218,6 +229,7 @@ export const VIDEO_MODELS = [
 
 // Chat/LLM models | 对话模型
 export const CHAT_MODELS = [
+    { label: 'DeepSeek V3.2', key: 'deepseek-ai/DeepSeek-V3.2', provider: ['astraflow'] },
     { label: 'GPT-4o Mini', key: 'gpt-4o-mini', provider: ['openai'] },
     { label: 'GPT-4o', key: 'gpt-4o', provider: ['openai'] },
     { label: 'GPT-5.2', key: 'gpt-5.2', provider: ['openai'] },
@@ -282,3 +294,7 @@ export const usesVolcengineImageApi = (modelKey) =>
  */
 export const usesVolcengineVideoApi = (modelKey) =>
     typeof modelKey === 'string' && modelKey.includes('doubao-seedance-1-5-pro')
+
+/** 星图 Gemini 生图：走 Modelverse generateContent + x-goog-api-key，非 OpenAI images 接口 */
+export const usesModelverseGeminiImage = (modelKey) =>
+    typeof modelKey === 'string' && modelKey.includes('gemini-3.1-flash-image-preview')

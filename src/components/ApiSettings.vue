@@ -196,7 +196,30 @@
 import { ref, reactive, watch, computed } from 'vue'
 import { NModal, NForm, NFormItem, NInput, NButton, NAlert, NDivider, NTag, NTabs, NTabPane, NSelect } from 'naive-ui'
 import { useModelStore } from '../stores/pinia'
-import { getProviderConfig } from '../config/providers'
+import { getProviderConfig, ASTRAFLOW_DEFAULT_MODELS } from '../config/providers'
+import { fetchModelverseTextModels } from '../api/modelverseTextModels'
+
+/** 星图渠道：当前选中模型若不在该渠道可用列表则回落到 PRD 默认或列表首项 */
+function applyAstraflowModelDefaults(store) {
+  const { chat, image, video } = store.getModelsByProvider('astraflow')
+  const def = ASTRAFLOW_DEFAULT_MODELS
+
+  if (!chat.some((m) => m.key === store.selectedChatModel)) {
+    store.selectedChatModel = chat.some((m) => m.key === def.chat)
+      ? def.chat
+      : chat[0]?.key || def.chat
+  }
+  if (!image.some((m) => m.key === store.selectedImageModel)) {
+    store.selectedImageModel = image.some((m) => m.key === def.image)
+      ? def.image
+      : image[0]?.key || store.selectedImageModel
+  }
+  if (!video.some((m) => m.key === store.selectedVideoModel)) {
+    store.selectedVideoModel = video.some((m) => m.key === def.video)
+      ? def.video
+      : video[0]?.key || store.selectedVideoModel
+  }
+}
 
 // Props | 属性
 const props = defineProps({
@@ -315,7 +338,7 @@ const handleRemoveVideoModel = (modelKey) => {
 }
 
 // Handle save | 处理保存
-const handleSave = () => {
+const handleSave = async () => {
   if (formData.provider) {
     modelStore.setProvider(formData.provider)
   }
@@ -325,6 +348,25 @@ const handleSave = () => {
   if (formData.baseUrl) {
     modelStore.setBaseUrlByProvider(formData.provider, formData.baseUrl)
   }
+
+  if (formData.provider === 'astraflow' && formData.apiKey && String(formData.baseUrl || '').trim()) {
+    try {
+      const list = await fetchModelverseTextModels(
+        String(formData.baseUrl).trim(),
+        formData.apiKey
+      )
+      if (list.length) {
+        modelStore.replaceCustomChatModelsByProvider('astraflow', list)
+      }
+    } catch {
+      window.$message?.warning('文本模型列表拉取失败，可使用内置与已保存的自定义模型')
+    }
+  }
+
+  if (formData.provider === 'astraflow') {
+    applyAstraflowModelDefaults(modelStore)
+  }
+
   showModal.value = false
   emit('saved')
 }

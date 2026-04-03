@@ -3,6 +3,28 @@
  * 适配不同 API 提供商的请求参数和响应格式
  */
 
+/** 星图（UCloud Modelverse）保存 API 设置时的默认模型，与 PRD 对齐 */
+export const ASTRAFLOW_DEFAULT_MODELS = {
+  chat: 'deepseek-ai/DeepSeek-V3.2',
+  image: 'gemini-3.1-flash-image-preview',
+  video: 'doubao-seedance-1-5-pro-251215'
+}
+
+/** 将画布侧比例 key（如 16x9）转为 Modelverse 文档中的 ratio（如 16:9） */
+function toModelverseVideoRatio(sizeOrRatio) {
+  if (!sizeOrRatio || typeof sizeOrRatio !== 'string') return 'adaptive'
+  if (sizeOrRatio.includes(':')) return sizeOrRatio
+  const map = {
+    '16x9': '16:9',
+    '9x16': '9:16',
+    '1x1': '1:1',
+    '4x3': '4:3',
+    '3x4': '3:4',
+    '21x9': '21:9'
+  }
+  return map[sizeOrRatio] || 'adaptive'
+}
+
 // 渠道适配配置
 export const PROVIDERS = {
   chatfire: {
@@ -316,6 +338,109 @@ export const PROVIDERS = {
           response.video_url ||
           ''
         return { url, ...response }
+      }
+    }
+  },
+  /**
+   * 星图 Astraflow / UCloud Modelverse（国内站 api.modelverse.cn）
+   * 文本：OpenAI 兼容 /v1/chat/completions；图：Gemini generateContent 见 useImageGeneration；
+   * 视频：Seedance 走 /v1/tasks/submit + /v1/tasks/status
+   */
+  astraflow: {
+    label: '星图 (Astraflow)',
+    defaultBaseUrl: 'https://api.modelverse.cn',
+    endpoints: {
+      chat: '/v1/chat/completions',
+      image: '/v1/images/generations',
+      video: '/v1/tasks/submit',
+      videoQuery: '/v1/tasks/status?task_id={taskId}'
+    },
+    requestAdapter: {
+      chat: (params) => {
+        const adapted = {
+          model: params.model,
+          messages: params.messages
+        }
+        if (params.temperature !== undefined) adapted.temperature = params.temperature
+        if (params.max_tokens !== undefined) adapted.max_tokens = params.max_tokens
+        if (params.stream !== undefined) adapted.stream = params.stream
+        return adapted
+      },
+      image: (params) => {
+        const adapted = {
+          model: params.model,
+          prompt: params.prompt
+        }
+        if (params.size) adapted.size = params.size
+        if (params.n) adapted.n = params.n
+        if (params.quality) adapted.quality = params.quality
+        if (params.style) adapted.style = params.style
+        if (params.image) adapted.image = params.image
+        return adapted
+      },
+      video: (params) => {
+        const model = params.model || ''
+        if (!model.includes('seedance')) {
+          return {
+            model,
+            input: {
+              content: [{ type: 'text', text: params.prompt || '' }]
+            },
+            parameters: {
+              resolution: params.resolution || '720p',
+              ratio: toModelverseVideoRatio(params.size),
+              duration: params.seconds != null ? Number(params.seconds) : 5
+            }
+          }
+        }
+        const content = []
+        content.push({ type: 'text', text: params.prompt || '' })
+        if (params.first_frame_image) {
+          const entry = {
+            type: 'image_url',
+            image_url: { url: params.first_frame_image }
+          }
+          if (params.last_frame_image) entry.role = 'first_frame'
+          content.push(entry)
+        }
+        if (params.last_frame_image) {
+          content.push({
+            type: 'image_url',
+            image_url: { url: params.last_frame_image },
+            role: 'last_frame'
+          })
+        }
+        const parameters = {
+          generate_audio: params.generateAudio !== undefined ? !!params.generateAudio : true,
+          draft: false,
+          resolution: params.resolution || '720p',
+          ratio: toModelverseVideoRatio(params.size),
+          duration: params.seconds != null ? Number(params.seconds) : 5,
+          watermark: params.wm !== undefined ? !!params.wm : false,
+          camera_fixed: params.cf !== undefined ? !!params.cf : false
+        }
+        if (params.seed !== undefined) parameters.seed = params.seed
+        return { model, input: { content }, parameters }
+      }
+    },
+    responseAdapter: {
+      chat: (response) => {
+        if (response.choices && response.choices.length > 0) {
+          return response.choices[0].message?.content || ''
+        }
+        return ''
+      },
+      image: (response) => {
+        const data = response.data || response
+        return (Array.isArray(data) ? data : [data]).map(item => ({
+          url: item.url || item.b64_json || '',
+          revisedPrompt: item.revised_prompt || ''
+        }))
+      },
+      video: (response) => {
+        const tid = response.output?.task_id || response.task_id || response.taskId || response.id
+        const url = response.output?.urls?.[0] || response.data?.url || response.url || ''
+        return { url, taskId: tid, ...response }
       }
     }
   },

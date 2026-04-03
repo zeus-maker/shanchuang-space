@@ -35,7 +35,10 @@ instance.interceptors.request.use(
     const isNoAuth = noAuthEndpoints.some(ep => config.url?.includes(ep))
 
     const existingAuth = config.headers?.Authorization ?? config.headers?.authorization
-    if (apiKey && !isNoAuth && !existingAuth) {
+    const hasGoogKey =
+      config.headers?.['x-goog-api-key'] != null ||
+      config.headers?.['X-Goog-Api-Key'] != null
+    if (apiKey && !isNoAuth && !existingAuth && !hasGoogKey) {
       config.headers['Authorization'] = `Bearer ${apiKey}`
     }
 
@@ -77,11 +80,16 @@ instance.interceptors.response.use(
     if (response) {
       const { status, data } = response
       const message = data?.message || data?.error?.message || error.message
-      
+      const msgStr = String(message || '')
+      const balanceHint =
+        /余额|欠费|配额|充值|insufficient|quota|billing|payment required|402/i.test(msgStr)
+
       if (status === 401) {
         window.$message?.error('API Key 无效或已过期')
       } else if (status === 429) {
         window.$message?.error('请求过于频繁，请稍后再试')
+      } else if (balanceHint || status === 402) {
+        window.$message?.error('账户余额不足或配额已用尽，请前往对应平台控制台充值后重试')
       } else {
         window.$message?.error(message || '请求失败')
       }
