@@ -59,4 +59,8 @@ Veo-3.1/文图生视频
   - 选择模型时选项太多导致无法选择超出选项框的模型（已实现：可滚动下拉）
   - 选择模型后，生图模型调用方式不对，没有参考官方文档调用接口文档（docs/rag/官方文档地址.md）。https://api.modelverse.cn/v1beta/models/gemini-3.1-flash-image-preview:generateContent（已实现：路径 ID 映射、contents.role=user、2.5 与 3.x 分支、参考图 parts）
 9. 脚本生成器节点/视频节点等模型时选项太多导致无法选择超出选项框的模型（已实现：Script/VideoConfig/Video/Image/LLM 节点与画布批量视频共用可滚动下拉工具）
-10. 
+10. sora图生视频生成参数first_frame_url不支持base64图片，需要先将图片上传到火山引擎OSS获取链接后再使用
+11. 刷新页面后生成的图片不显示了
+
+
+
