@@ -1,7 +1,7 @@
 /**
  * 本地媒体缓存服务：将生成的图片/视频 URL 拉取并保存到可配置目录（默认项目根下 uploads/）
  * 环境变量：MEDIA_ROOT、MEDIA_SERVER_PORT（默认 8787）
- * Sora2 图生视频首帧：可选 VOLCENGINE_TOS_*，见 README「Sora 图生视频首帧」
+ * Sora2 图生视频首帧：可选 TOS_*（与常见后端一致），或旧名 VOLCENGINE_TOS_*，见 README
  */
 import express from 'express'
 import fs from 'fs/promises'
@@ -66,14 +66,36 @@ function parseImageDataUrl (dataUrl) {
   return { buf, mime, ext }
 }
 
+/** TOS 对象键前缀：仅允许安全字符，多段用 / 分隔 */
+function sanitizeTosObjectPrefix (raw) {
+  if (!raw || typeof raw !== 'string') return ''
+  const s = raw.trim().replace(/^\/+|\/+$/g, '')
+  if (!s) return ''
+  return s
+    .split('/')
+    .map(p => p.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 200))
+    .filter(Boolean)
+    .join('/')
+}
+
 function getTosRuntime () {
-  const accessKeyId = process.env.VOLCENGINE_TOS_ACCESS_KEY_ID
-  const accessKeySecret = process.env.VOLCENGINE_TOS_SECRET_ACCESS_KEY
-  const bucket = process.env.VOLCENGINE_TOS_BUCKET
-  const region = (process.env.VOLCENGINE_TOS_REGION || 'cn-beijing').trim()
-  const endpoint = (process.env.VOLCENGINE_TOS_ENDPOINT || `tos-${region}.volces.com`).replace(
-    /^https?:\/\//i,
-    ''
+  const accessKeyId =
+    process.env.TOS_ACCESS_KEY || process.env.VOLCENGINE_TOS_ACCESS_KEY_ID
+  const accessKeySecret =
+    process.env.TOS_SECRET_KEY || process.env.VOLCENGINE_TOS_SECRET_ACCESS_KEY
+  const bucket = process.env.TOS_BUCKET || process.env.VOLCENGINE_TOS_BUCKET
+  const region = (
+    process.env.TOS_REGION ||
+    process.env.VOLCENGINE_TOS_REGION ||
+    'cn-beijing'
+  ).trim()
+  const endpointRaw =
+    process.env.TOS_ENDPOINT ||
+    process.env.VOLCENGINE_TOS_ENDPOINT ||
+    `tos-${region}.volces.com`
+  const endpoint = String(endpointRaw).replace(/^https?:\/\//i, '')
+  const objectPrefix = sanitizeTosObjectPrefix(
+    process.env.TOS_OBJECT_PREFIX || process.env.VOLCENGINE_TOS_OBJECT_PREFIX
   )
   if (!accessKeyId || !accessKeySecret || !bucket) return null
   const client = new TosClient({
@@ -82,12 +104,13 @@ function getTosRuntime () {
     region,
     endpoint
   })
-  return { client, bucket, region }
+  return { client, bucket, region, objectPrefix }
 }
 
 /** 虚拟托管域名或自定义 CDN 前缀 */
 function buildTosPublicObjectUrl (bucket, region, key) {
-  const custom = process.env.VOLCENGINE_TOS_PUBLIC_BASE_URL
+  const custom =
+    process.env.TOS_PUBLIC_BASE_URL || process.env.VOLCENGINE_TOS_PUBLIC_BASE_URL
   const enc = key.split('/').map(encodeURIComponent).join('/')
   if (custom && String(custom).trim()) {
     return `${String(custom).replace(/\/$/, '')}/${enc}`
@@ -106,7 +129,7 @@ app.post('/api/media/sora-frame-upload', express.json({ limit: '25mb' }), async 
     return res.status(503).json({
       ok: false,
       error:
-        '未配置火山 TOS：请设置 VOLCENGINE_TOS_ACCESS_KEY_ID、VOLCENGINE_TOS_SECRET_ACCESS_KEY、VOLCENGINE_TOS_BUCKET'
+        '未配置火山 TOS：请设置 TOS_ACCESS_KEY、TOS_SECRET_KEY、TOS_BUCKET（或旧名 VOLCENGINE_TOS_ACCESS_KEY_ID 等）'
     })
   }
   const parsed = parseImageDataUrl(req.body?.dataUrl)
@@ -117,7 +140,8 @@ app.post('/api/media/sora-frame-upload', express.json({ limit: '25mb' }), async 
     })
   }
   const pid = sanitizeProjectId(req.body?.projectId)
-  const key = `sora-i2v-frames/${pid}/${crypto.randomUUID()}.${parsed.ext}`
+  const subKey = `sora-i2v-frames/${pid}/${crypto.randomUUID()}.${parsed.ext}`
+  const key = tos.objectPrefix ? `${tos.objectPrefix}/${subKey}` : subKey
   try {
     await tos.client.putObject({
       bucket: tos.bucket,

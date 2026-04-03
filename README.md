@@ -109,12 +109,15 @@ pnpm start
 
 | 变量 | 含义 |
 |------|------|
-| `VOLCENGINE_TOS_ACCESS_KEY_ID` | TOS 访问密钥 ID（勿提交仓库） |
-| `VOLCENGINE_TOS_SECRET_ACCESS_KEY` | TOS 访问密钥 Secret |
-| `VOLCENGINE_TOS_BUCKET` | 存储桶名称 |
-| `VOLCENGINE_TOS_REGION` | 可选，默认 `cn-beijing` |
-| `VOLCENGINE_TOS_ENDPOINT` | 可选，默认 `tos-${REGION}.volces.com` |
-| `VOLCENGINE_TOS_PUBLIC_BASE_URL` | 可选，自定义公网访问前缀（如 CDN），不填则用 `https://${bucket}.tos-${region}.volces.com` |
+| `TOS_ACCESS_KEY` | TOS 访问密钥 ID（勿提交仓库） |
+| `TOS_SECRET_KEY` | TOS 访问密钥 Secret |
+| `TOS_BUCKET` | 存储桶名称 |
+| `TOS_REGION` | 可选，默认 `cn-beijing` |
+| `TOS_ENDPOINT` | 可选，可写 `https://tos-cn-beijing.volces.com` 或 `tos-cn-beijing.volces.com`；不填则按 region 拼默认域名 |
+| `TOS_OBJECT_PREFIX` | 可选，对象键前缀（如 `aidirector`），最终键为 `{prefix}/sora-i2v-frames/{projectId}/{uuid}.ext` |
+| `TOS_PUBLIC_BASE_URL` | 可选，自定义公网访问前缀（如 CDN），不填则用 `https://${bucket}.tos-${region}.volces.com` |
+
+以下为兼容旧名，与上表 **二选一** 即可：`VOLCENGINE_TOS_ACCESS_KEY_ID`、`VOLCENGINE_TOS_SECRET_ACCESS_KEY`、`VOLCENGINE_TOS_BUCKET`、`VOLCENGINE_TOS_REGION`、`VOLCENGINE_TOS_ENDPOINT`、`VOLCENGINE_TOS_OBJECT_PREFIX`、`VOLCENGINE_TOS_PUBLIC_BASE_URL`。
 
 桶策略或对象 ACL 需允许 **Modelverse 服务端** 拉取该 URL（通常对象需匿名可读或使用其可访问的域名）。
 
