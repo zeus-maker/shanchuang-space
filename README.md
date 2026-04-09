@@ -258,9 +258,10 @@ shanchuang-space/
 └── .env.example
 ```
 
-- 架构与实现细节：**[`docs/TECH.md`](./docs/TECH.md)**  
-- 产品需求与场景：**[`docs/product-requirements-document.md`](./docs/product-requirements-document.md)**  
-- 变更留档索引：**[`docs/dev/README.md`](./docs/dev/README.md)**
+- 技术架构总览：**[1-技术架构文档](./docs/1-技术架构文档.md)**  
+- 产品需求与设计解析（PRD）：**[2-闪创空间 PRD](./docs/2-闪创空间%20-%20产品需求与设计解析文档%20%28PRD%29.md)**（文件名含空格与括号，链接已编码）  
+- 核心系统架构与代码复刻：**[3-核心系统架构与代码复刻指南](./docs/3-闪创空间%20-%20核心系统架构与代码复刻指南.md)**  
+- 变更留档索引：**[docs/dev/README.md](./docs/dev/README.md)**
 
 ---
 
